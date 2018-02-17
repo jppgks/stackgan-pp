@@ -1,1 +1,4 @@
 .idea/
+# Ignore models submodule
+models/
+
