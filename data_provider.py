@@ -3,16 +3,15 @@ import sys
 import tensorflow as tf
 
 # Add models/ modules to path
-sys.path.append('models')
 sys.path.append('models/research')
 sys.path.append('models/research/gan')
 sys.path.append('models/research/slim')
 
 # TF-Slim data provider.
-from datasets import download_and_convert_cifar10
+from models.research.slim.datasets import download_and_convert_cifar10
 
 # TFGAN CIFAR examples from `tensorflow/models`.
-from cifar import data_provider
+from models.research.gan.cifar import data_provider
 
 
 def download_train_data(dataset_dir):
