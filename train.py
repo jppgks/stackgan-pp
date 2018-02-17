@@ -21,12 +21,12 @@ flags.DEFINE_integer('batch_size', 8,
 flags.DEFINE_integer('noise_dim', 64,  # 100
                      'Dimension of the noise that\'s input for each generator.')
 
-flags.DEFINE_float('color_loss', 50, 'Weight of color loss.')
+flags.DEFINE_float('color_loss', 50, 'Weight of color loss (see paper).')
 
 flags.DEFINE_float('generator_lr', 0.0001, 'Generator learning rate.')
 
 flags.DEFINE_boolean('do_lr_decay', True,
-                     'Whether or not to decay the generator\'s learning rate.')
+                     'Decay the generator\'s learning rate.')
 
 flags.DEFINE_integer('decay_steps', 100000,
                      'After how many steps to decay the learning rate.')
@@ -40,12 +40,17 @@ flags.DEFINE_float('discriminator_lr', 0.0001,
 flags.DEFINE_float('gradient_penalty', 1, 'Gradient penalty weight.')
 
 flags.DEFINE_boolean('apply_batch_norm', False,
-                     'Whether or not to apply batch normalization.')
+                     'Apply batch normalization.')
 
 flags.DEFINE_string('train_log_dir', '/tmp/cifar-stackgan-3stage',
-                    'Directory to write event logs to.')
+                    'Directory to write event logs and checkpoints to. Will '
+                    'continue training from a checkpoint in this directory if '
+                    'one exists.')
 
-flags.DEFINE_string('dataset_dir', '/tmp/cifar-data', 'Location of data.')
+flags.DEFINE_string('dataset_dir', '/tmp/cifar-data',
+                    'Location of the training data, if it has already been '
+                    'downloaded. Otherwise, the training data will be '
+                    'downloaded to this folder.')
 
 flags.DEFINE_integer('max_number_of_steps', 1000000,
                      # num_samples / batch_size * 5 * 120 = 180000
