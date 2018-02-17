@@ -165,13 +165,16 @@ def main(_):
          tf.as_string(tf.train.get_or_create_global_step())],
         name='status_message')
     if FLAGS.max_number_of_steps == 0: return
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
     tfgan.gan_train(
         train_ops,
         FLAGS.train_log_dir,
         get_hooks_fn=tfstackgan.get_sequential_train_hooks(),
         hooks=[tf.train.StopAtStepHook(num_steps=FLAGS.max_number_of_steps),
                tf.train.LoggingTensorHook([status_message], every_n_iter=1000)],
-        save_summaries_steps=100
+        save_summaries_steps=100,
+        config=config
         #    master=FLAGS.master,
         #    is_chief=FLAGS.task == 0
     )
