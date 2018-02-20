@@ -11,7 +11,7 @@ tfgan = tf.contrib.gan
 tfgan_losses = tfgan.losses
 
 flags = tf.flags
-flags.DEFINE_integer('stack_depth', 3,
+flags.DEFINE_integer('stack_depth', 1,
                      'Defines the size of the GAN stack: ' +
                      'the number of (discriminator, generator) stages.')
 
