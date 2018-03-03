@@ -72,7 +72,7 @@ def dcgan_generator(inputs,
                 else:
                     # Next stage.
                     num_layers = int(log(final_size)) - (
-                    int(log(inputs.shape[1])) - 1) - 1
+                        int(log(inputs.shape[1])) - 1) - 1
                     net = inputs
 
                 if num_layers > 1:
@@ -119,31 +119,28 @@ def dcgan_generator(inputs,
 
 
 def generator(inputs, final_size=32, apply_batch_norm=False):
+    # TODO: docstring
     """Generator to produce CIFAR images.
-    Args:
-      noise: A 2D Tensor of shape [batch size, noise dim]. Since this example
-        does not use conditioning, this Tensor represents a noise vector of some
-        kind that will be reshaped by the generator into CIFAR examples.
+    Args: 
+        :param inputs: 3D tuple of (is_init_stage, noise, conditioning) with
+            a) noise as the sample from the noise distribution if is_init_stage,
+            otherwise noise is the hidden code of the previous stage
+            b) conditioning always as the text embedding.
     Returns:
       A single Tensor with a batch of generated CIFAR images.
     """
-    if isinstance(inputs, list):
-        # Next stage.
-        hidden_code, noise = inputs
-
-        h_code_depth = hidden_code.get_shape()[-1]
-        h_code_final_size = hidden_code.get_shape()[
-            1]  # same as hidden_code.get_shape()[2]
-        noise = tf.expand_dims(tf.expand_dims(noise, 1), 1)
-        noise = tf.tile(noise, [1, h_code_final_size, h_code_final_size, 1])
-
-        noise = tf.concat([noise, hidden_code], -1)
+    is_init_stage, noise, conditioning = inputs
+    if is_init_stage:
+        noise = tf.concat([conditioning, noise], 1)  # noise, conditioning -1
+        num_layers = int(log(final_size)) - 1
+    else:
+        h_code_final_size = noise.get_shape()[2]
+        conditioning = tf.reshape(conditioning, [-1, tf.size(conditioning), 1, 1])
+        conditioning = tf.tile(conditioning,
+                               [1, 1, h_code_final_size, h_code_final_size])
+        noise = tf.concat([conditioning, noise], 1)  # -1
 
         num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
-    else:
-        # Init stage.
-        noise = inputs
-        num_layers = int(log(final_size)) - 1
 
     images, end_points = dcgan_generator(
         noise, final_size=final_size,

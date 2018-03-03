@@ -71,14 +71,16 @@ def main(_):
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
     gan_models = []
-    for i in range(FLAGS.stack_depth):
+    for stage in range(FLAGS.stack_depth):
         kwargs = {
-            'generator_input_fn': _get_generator_input_for_stage(gan_models, i,
-                                                                 noise),
-            'real_data': _get_real_data_for_stage(images, i),
+            'generator_input_fn': _get_generator_input_for_stage(gan_models,
+                                                                 stage,
+                                                                 noise,
+                                                                 conditioning),
+            'real_data': _get_real_data_for_stage(images, stage),
             'generator_super_scope': gan_models[
-                -1].generator_scope if i > 0 else None,
-            'stage': i,
+                -1].generator_scope if stage > 0 else None,
+            'stage': stage,
             'apply_batch_norm': FLAGS.apply_batch_norm}
         current_model = tfstackgan.gan_model(
             networks.generator,
@@ -98,14 +100,14 @@ def main(_):
     # Only a need for one overall generator loss, as generator is optimized once
     # per training step in which all discriminator stages are optimized.
     dis_losses = []
-    for i in range(FLAGS.stack_depth):
-        with tf.variable_scope(gan_models[i].discriminator_scope):
+    for stage in range(FLAGS.stack_depth):
+        with tf.variable_scope(gan_models[stage].discriminator_scope):
             with tf.name_scope(
-                    gan_models[i].discriminator_scope.original_name_scope):
+                    gan_models[stage].discriminator_scope.original_name_scope):
                 print(tf.get_variable_scope().name)
                 with tf.variable_scope('losses'):
                     current_stage_dis_loss = tfstackgan.dis_loss(
-                        gan_models[i],
+                        gan_models[stage],
                         discriminator_loss_fn=tfgan.losses.wasserstein_discriminator_loss,
                         gradient_penalty_weight=FLAGS.gradient_penalty)
                     dis_losses.append(current_stage_dis_loss)
@@ -180,14 +182,17 @@ def main(_):
     )
 
 
-def _get_generator_input_for_stage(models, i, noise):
-    assert isinstance(i, int)
+def _get_generator_input_for_stage(models, stage, noise_sample, conditioning):
+    assert isinstance(stage, int)
 
     def get_input():
-        # Input into first stage is z ~ p_noise. Input for stage i generator
-        # is the hidden code outputted by stage (i-1) + conditioning (just
-        # noise for image generation task).
-        return [models[i - 1].generator_hidden_code, noise] if i else noise
+        is_init_stage = not bool(stage)
+        # Noise input into first stage is z ~ p_noise.
+        # Noise input for stage i generator is the hidden code outputted by
+        # stage (i-1) + conditioning.
+        noise = noise_sample if is_init_stage else models[
+            stage - 1].generator_hidden_code
+        return is_init_stage, noise, conditioning
 
     return get_input
 
