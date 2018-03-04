@@ -117,7 +117,7 @@ def main(_):
             with tf.variable_scope('loss'):
                 gen_loss_tuple = tfstackgan.gen_loss(
                     gan_models,
-                    generator_loss_fn=tfgan.losses.wasserstein_generator_loss,
+                    generator_loss_fn=tfstackgan.losses.wasserstein_generator_loss,
                     color_loss_weight=FLAGS.color_loss)
 
     # Instantiate train ops.

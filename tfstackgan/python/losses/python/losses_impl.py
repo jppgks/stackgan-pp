@@ -2,6 +2,7 @@ import tensorflow as tf
 
 __all__ = [
     'color_loss',
+    'wasserstein_generator_loss',
 ]
 
 
@@ -65,3 +66,55 @@ def color_loss(weight, models):
     #      self.summary_writer.add_summary(sum_mu, count)
     #      sum_cov = summary.scalar('G_like_cov1', like_cov1.data[0])
     #      self.summary_writer.add_summary(sum_cov, count)
+
+
+# Wasserstein losses from `Wasserstein GAN` (https://arxiv.org/abs/1701.07875).
+def wasserstein_generator_loss(
+        discriminator_gen_outputs_cond,
+        discriminator_gen_outputs_uncond,
+        weights=1.0,
+        scope=None,
+        loss_collection=tf.GraphKeys.LOSSES,
+        reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS,
+        add_summaries=False):
+    """Wasserstein generator loss for GANs.
+    See `Wasserstein GAN` (https://arxiv.org/abs/1701.07875) for more details.
+    Args:
+      discriminator_gen_outputs: Discriminator output on generated data. Expected
+        to be in the range of (-inf, inf).
+      weights: Optional `Tensor` whose rank is either 0, or the same rank as
+        `discriminator_gen_outputs`, and must be broadcastable to
+        `discriminator_gen_outputs` (i.e., all dimensions must be either `1`, or
+        the same as the corresponding dimension).
+      scope: The scope for the operations performed in computing the loss.
+      loss_collection: collection to which this loss will be added.
+      reduction: A `tf.losses.Reduction` to apply to loss.
+      add_summaries: Whether or not to add detailed summaries for the loss.
+    Returns:
+      A loss Tensor. The shape depends on `reduction`.
+    """
+    with tf.name_scope(scope, 'generator_wasserstein_loss', (
+            discriminator_gen_outputs_cond, weights)) as scope:
+        discriminator_gen_outputs_cond = tf.to_float(
+            discriminator_gen_outputs_cond)
+
+        cond_loss = - discriminator_gen_outputs_cond
+        cond_loss = tf.losses.compute_weighted_loss(cond_loss, weights, scope,
+                                                    loss_collection, reduction)
+
+        discriminator_gen_outputs_uncond = tf.to_float(
+            discriminator_gen_outputs_uncond)
+
+        uncond_loss = - discriminator_gen_outputs_uncond
+        uncond_loss = tf.losses.compute_weighted_loss(uncond_loss, weights,
+                                                      scope, loss_collection,
+                                                      reduction)
+        uncond_loss_coeff = 1.0
+        uncond_loss = uncond_loss_coeff * uncond_loss
+
+        loss = cond_loss + uncond_loss
+
+        if add_summaries:
+            tf.summary.scalar('generator_wass_loss', loss)
+
+    return loss

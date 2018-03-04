@@ -97,7 +97,9 @@ def gan_model(  # Lambdas defining models.
         dis_scope,
         discriminator_fn,
         generator_hidden_code,
-        stage)
+        stage,
+        disc_real_outputs_uncond,
+        disc_gen_outputs_uncond, )
 
 
 def _tensor_pool_adjusted_model(model, tensor_pool_fn):
@@ -253,7 +255,7 @@ def dis_loss(
 
 def gen_loss(
         models,
-        generator_loss_fn=tfgan_losses.wasserstein_generator_loss,
+        generator_loss_fn=tfstackgan_losses.wasserstein_generator_loss,
         # Auxiliary losses.
         mutual_information_penalty_weight=None,
         aux_cond_generator_weight=None,
@@ -318,8 +320,10 @@ def gen_loss(
 
     for i in range(len(models)):
         with tf.name_scope('loss_stage_' + str(i)):
-            gen_loss += generator_loss_fn(models[i],
-                                          add_summaries=add_summaries)
+            gen_loss += generator_loss_fn(
+                models[i].discriminator_gen_outputs_cond,
+                models[i].discriminator_gen_outputs_uncond,
+                add_summaries=add_summaries)
 
             # Add optional extra losses.
             if _use_aux_loss(mutual_information_penalty_weight):
