@@ -4,6 +4,7 @@ __all__ = [
     'color_loss',
     'wasserstein_generator_loss',
     'wasserstein_discriminator_loss',
+    'kl_loss',
 ]
 
 
@@ -201,3 +202,10 @@ def wasserstein_discriminator_loss(
             tf.summary.scalar('discriminator_wass_loss', loss)
 
     return loss
+
+
+def kl_loss(mu, logvar):
+    # -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    kld = 1 + logvar - (mu ** 2) - tf.exp(logvar)
+    kld = tf.reduce_mean(kld) * -0.5
+    return kld

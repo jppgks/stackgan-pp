@@ -66,21 +66,24 @@ def main(_):
         tf.gfile.MakeDirs(FLAGS.train_log_dir)
 
     # Get training data.
-    images = data_provider.get_training_data_iterator(FLAGS.batch_size,
+    # TODO(joppe): have data provider return text embedding
+    images, text_embedding = data_provider.get_training_data_iterator(FLAGS.batch_size,
                                                       FLAGS.dataset_dir)
 
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
+    augmented_conditioning, mu, logvar = networks.augment(text_embedding,
+                                                          FLAGS.noise_dim)
     gan_models = []
     for stage in range(FLAGS.stack_depth):
         kwargs = {
             'generator_input_fn': _get_generator_input_for_stage(gan_models,
                                                                  stage,
                                                                  noise,
-                                                                 conditioning),
+                                                                 augmented_conditioning),
             'real_data': _get_real_data_for_stage(images, stage),
-            'conditioning': conditioning,
+            'disc_conditioning': mu,
             'generator_super_scope': gan_models[
                 -1].generator_scope if stage > 0 else None,
             'stage': stage,
@@ -121,7 +124,9 @@ def main(_):
                     gan_models,
                     generator_loss_fn=tfstackgan.losses.wasserstein_generator_loss,
                     color_loss_weight=FLAGS.color_loss,
-                    uncond_loss_coeff=FLAGS.uncond_loss_coeff)
+                    uncond_loss_coeff=FLAGS.uncond_loss_coeff,
+                    mu=mu,
+                    logvar=logvar,)
 
     # Instantiate train ops.
     # Generator's learning rate decays, while discriminator's stays constant.

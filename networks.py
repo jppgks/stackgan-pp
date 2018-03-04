@@ -118,6 +118,31 @@ def dcgan_generator(inputs,
                 return logits, end_points
 
 
+def augment(conditioning, noise_dim: int):
+    """Increases the number of conditioning variables available for training.
+
+    :param conditioning: Text embedding
+    :param noise_dim: 
+    :return: `conditioning`, augmented with additional latent variables, 
+        sampled from a Gaussian distribution, with mean and standard deviation 
+        as a function of `conditioning`.
+    """
+    # Encode
+    net = slim.fully_connected(conditioning, noise_dim, activation_fn=None)
+    split = tf.shape(net)[1]
+    split = int(split / 2)
+    glu = net[:, :split] * tf.sigmoid(net[:, split:])
+    mu = glu[:, :noise_dim]
+    logvar = glu[:, noise_dim:]
+
+    # Reparametrize
+    std = tf.exp(logvar * 0.5)
+    gauss_sample = tf.random_normal(tf.shape(std))
+    augmented_conditioning = mu + (gauss_sample * std)
+
+    return augmented_conditioning, mu, logvar
+
+
 def generator(inputs, final_size=32, apply_batch_norm=False):
     # TODO: docstring
     """Generator to produce CIFAR images.
@@ -130,6 +155,7 @@ def generator(inputs, final_size=32, apply_batch_norm=False):
       A single Tensor with a batch of generated CIFAR images.
     """
     is_init_stage, noise, conditioning = inputs
+
     if is_init_stage:
         noise = tf.concat([conditioning, noise], 1)  # noise, conditioning -1
         num_layers = int(log(final_size)) - 1
@@ -150,7 +176,7 @@ def generator(inputs, final_size=32, apply_batch_norm=False):
     hidden_code = end_points['deconv%i' % (num_layers)]
 
     # Make sure output lies between [-1, 1].
-    return tf.tanh(images), hidden_code
+    return tf.tanh(images), hidden_code, mu, logvar
 
 
 def _validate_image_inputs(inputs):

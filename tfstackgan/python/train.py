@@ -33,9 +33,9 @@ def _get_or_create_gen_super_scope(super_scope):
 def gan_model(  # Lambdas defining models.
         generator_fn,
         discriminator_fn,
-        # Real data and conditioning.
+        # Real data and discriminator conditioning.
         real_data,
-        conditioning,
+        disc_conditioning,
         generator_input_fn,
         # Stage (depth in stack).
         stage,
@@ -67,12 +67,13 @@ def gan_model(  # Lambdas defining models.
     with tf.variable_scope(current_stage_discriminator_scope,
                            reuse=tf.AUTO_REUSE) as dis_scope:
         discriminator_gen_outputs, disc_gen_outputs_uncond = discriminator_fn(
-            generated_data, conditioning, apply_batch_norm=apply_batch_norm)
+            generated_data, disc_conditioning,
+            apply_batch_norm=apply_batch_norm)
     with tf.variable_scope(dis_scope):
         with tf.name_scope(dis_scope.original_name_scope):
             real_data = tf.convert_to_tensor(real_data)
             discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
-                real_data, conditioning, apply_batch_norm=apply_batch_norm)
+                real_data, disc_conditioning, apply_batch_norm=apply_batch_norm)
 
     if check_shapes:
         if not generated_data.shape.is_compatible_with(real_data.shape):
@@ -99,7 +100,7 @@ def gan_model(  # Lambdas defining models.
         generator_hidden_code,
         stage,
         disc_real_outputs_uncond,
-        disc_gen_outputs_uncond,)
+        disc_gen_outputs_uncond, )
 
 
 def _tensor_pool_adjusted_model(model: tfstackgan.StackGANModel,
@@ -129,7 +130,8 @@ def _tensor_pool_adjusted_model(model: tfstackgan.StackGANModel,
         with tf.variable_scope(model.discriminator_scope, reuse=True):
             dis_gen_outputs = model.discriminator_fn(pooled_generated_data,
                                                      pooled_generator_inputs)
-        return model._replace(discriminator_gen_outputs=dis_gen_outputs)  # type: tfstackgan.StackGANModel
+        return model._replace(
+            discriminator_gen_outputs=dis_gen_outputs)  # type: tfstackgan.StackGANModel
     elif isinstance(model, tfgan.ACGANModel):
         with tf.variable_scope(model.discriminator_scope, reuse=True):
             (dis_pooled_gen_outputs,
@@ -271,7 +273,10 @@ def gen_loss(
         # Options.
         add_summaries=True,
         color_loss_weight=0,
-        uncond_loss_coeff=1.0):
+        uncond_loss_coeff=1.0,
+        kl_loss_coeff=1.0,
+        mu=None,
+        logvar=None):
     """Returns losses necessary to train generator.
     Args:
       model: A GANModel tuple.
@@ -345,6 +350,9 @@ def gen_loss(
                 ac_gen_loss = tfgan_losses.acgan_generator_loss(
                     models[i], add_summaries=add_summaries)
                 gen_loss += aux_cond_generator_weight * ac_gen_loss
+
+    if mu and logvar:
+        gen_loss += kl_loss_coeff * tfstackgan_losses.kl_loss(mu, logvar)
 
     # Gathers auxiliary losses.
     if model.generator_scope:
