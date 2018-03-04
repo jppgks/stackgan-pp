@@ -135,7 +135,8 @@ def generator(inputs, final_size=32, apply_batch_norm=False):
         num_layers = int(log(final_size)) - 1
     else:
         h_code_final_size = noise.get_shape()[2]
-        conditioning = tf.reshape(conditioning, [-1, tf.size(conditioning), 1, 1])
+        conditioning = tf.reshape(conditioning,
+                                  [-1, tf.size(conditioning), 1, 1])
         conditioning = tf.tile(conditioning,
                                [1, 1, h_code_final_size, h_code_final_size])
         noise = tf.concat([conditioning, noise], 1)  # -1
@@ -228,7 +229,14 @@ def dcgan_discriminator(inputs,
                 return logits, end_points
 
 
-def discriminator(img, unused_conditioning, apply_batch_norm=False):
+def _last_conv_layer(end_points):
+    """"Returns the last convolutional layer from an endpoints dictionary."""
+    conv_list = [k if k[:4] == 'conv' else None for k in end_points.keys()]
+    conv_list.sort()
+    return end_points[conv_list[-1]]
+
+
+def discriminator(img, conditioning, apply_batch_norm=False):
     """Discriminator for CIFAR images.
     Args:
       img: A Tensor of shape [batch size, width, height, channels], that can be
@@ -243,5 +251,33 @@ def discriminator(img, unused_conditioning, apply_batch_norm=False):
       images are real. The output can lie in [-inf, inf], with positive values
       indicating high confidence that the images are real.
     """
-    logits, _ = dcgan_discriminator(img, is_training=apply_batch_norm)
-    return logits
+    depth = 64
+    _, end_points = dcgan_discriminator(img, depth=depth,
+                                        is_training=apply_batch_norm)
+
+    # TODO(joppe): have dcgan_discriminator return the right logits
+    net = _last_conv_layer(end_points)
+    conditioning = tf.reshape(conditioning, [-1, tf.size(conditioning), 1, 1])
+    conditioning = tf.tile(conditioning,
+                           [1, 1, 4, 4])
+    conditioned = tf.concat([conditioning, net], 1)  # -1
+
+    # Block3x3_leakRelu(ndf * 8 + efg, ndf * 8)
+    normalizer_fn_ = slim.batch_norm if apply_batch_norm else None
+    activation_fn_ = tf.nn.leaky_relu
+    conditioned = slim.conv2d(conditioned, depth, kernel_size=3, stride=1,
+                              padding='VALID', normalizer_fn=normalizer_fn_,
+                              activation_fn=activation_fn_)
+
+    # last layer dcgan_discriminator
+    conditioned_logits = slim.conv2d(conditioned, 1, kernel_size=1, stride=1,
+                                     padding='VALID',
+                                     normalizer_fn=None, activation_fn=None)
+    conditioned_logits = tf.reshape(conditioned_logits, [-1, 1])
+
+    unconditoned_logits = slim.conv2d(net, 1, kernel_size=1, stride=1,
+                                      padding='VALID',
+                                      normalizer_fn=None, activation_fn=None)
+    unconditoned_logits = tf.reshape(unconditoned_logits, [-1, 1])
+
+    return conditioned_logits, unconditoned_logits

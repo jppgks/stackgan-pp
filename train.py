@@ -78,6 +78,7 @@ def main(_):
                                                                  noise,
                                                                  conditioning),
             'real_data': _get_real_data_for_stage(images, stage),
+            'conditioning': conditioning,
             'generator_super_scope': gan_models[
                 -1].generator_scope if stage > 0 else None,
             'stage': stage,

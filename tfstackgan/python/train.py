@@ -35,6 +35,7 @@ def gan_model(  # Lambdas defining models.
         discriminator_fn,
         # Real data and conditioning.
         real_data,
+        conditioning,
         generator_input_fn,
         # Stage (depth in stack).
         stage,
@@ -63,18 +64,15 @@ def gan_model(  # Lambdas defining models.
                     generator_inputs, **kwargs)
 
     # Discriminate generated and real data.
-    with tf.variable_scope(
-            current_stage_discriminator_scope,
-            reuse=tf.AUTO_REUSE) as dis_scope:
-        discriminator_gen_outputs = discriminator_fn(
-            generated_data, None,
-            apply_batch_norm=apply_batch_norm)
+    with tf.variable_scope(current_stage_discriminator_scope,
+                           reuse=tf.AUTO_REUSE) as dis_scope:
+        discriminator_gen_outputs, disc_gen_outputs_uncond = discriminator_fn(
+            generated_data, conditioning, apply_batch_norm=apply_batch_norm)
     with tf.variable_scope(dis_scope):
         with tf.name_scope(dis_scope.original_name_scope):
             real_data = tf.convert_to_tensor(real_data)
-            discriminator_real_outputs = discriminator_fn(
-                real_data, None,
-                apply_batch_norm=apply_batch_norm)
+            discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
+                real_data, conditioning, apply_batch_norm=apply_batch_norm)
 
     if check_shapes:
         if not generated_data.shape.is_compatible_with(real_data.shape):
@@ -312,7 +310,8 @@ def gen_loss(
     ### TODO(joppe): use _use_aux_loss helper
     if color_loss_weight > 0:
         # Compute color preserve losses
-        color_loss_value = tfstackgan_losses.color_loss(color_loss_weight, models)
+        color_loss_value = tfstackgan_losses.color_loss(color_loss_weight,
+                                                        models)
     else:
         color_loss_value = 0
     gen_loss += color_loss_value
