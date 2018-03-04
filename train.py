@@ -23,6 +23,8 @@ flags.DEFINE_integer('noise_dim', 64,  # 100
 
 flags.DEFINE_float('color_loss', 50, 'Weight of color loss (see paper).')
 
+flags.DEFINE_float('uncond_loss_coeff', 1.0, 'Weight of unconditional loss.')
+
 flags.DEFINE_float('generator_lr', 0.0001, 'Generator learning rate.')
 
 flags.DEFINE_boolean('do_lr_decay', True,
@@ -109,7 +111,7 @@ def main(_):
                 with tf.variable_scope('losses'):
                     current_stage_dis_loss = tfstackgan.dis_loss(
                         gan_models[stage],
-                        discriminator_loss_fn=tfgan.losses.wasserstein_discriminator_loss,
+                        discriminator_loss_fn=tfstackgan.losses.wasserstein_discriminator_loss,
                         gradient_penalty_weight=FLAGS.gradient_penalty)
                     dis_losses.append(current_stage_dis_loss)
     with tf.variable_scope(gan_models[-1].generator_scope):
@@ -118,7 +120,8 @@ def main(_):
                 gen_loss_tuple = tfstackgan.gen_loss(
                     gan_models,
                     generator_loss_fn=tfstackgan.losses.wasserstein_generator_loss,
-                    color_loss_weight=FLAGS.color_loss)
+                    color_loss_weight=FLAGS.color_loss,
+                    uncond_loss_coeff=FLAGS.uncond_loss_coeff)
 
     # Instantiate train ops.
     # Generator's learning rate decays, while discriminator's stays constant.

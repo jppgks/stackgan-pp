@@ -99,13 +99,15 @@ def gan_model(  # Lambdas defining models.
         generator_hidden_code,
         stage,
         disc_real_outputs_uncond,
-        disc_gen_outputs_uncond, )
+        disc_gen_outputs_uncond,)
 
 
-def _tensor_pool_adjusted_model(model, tensor_pool_fn):
+def _tensor_pool_adjusted_model(model: tfstackgan.StackGANModel,
+                                tensor_pool_fn):
     """Adjusts model using `tensor_pool_fn`.
     Args:
-      model: A GANModel tuple.
+      :param model: A GANModel tuple.
+      :type model: tfstackgan.StackGANModel
       tensor_pool_fn: A function that takes (generated_data, generator_inputs),
         stores them in an internal pool and returns a previously stored
         (generated_data, generator_inputs) with some probability. For example
@@ -118,7 +120,7 @@ def _tensor_pool_adjusted_model(model, tensor_pool_fn):
       ValueError: If tensor pool does not support the `model`.
     """
     if tensor_pool_fn is None:
-        return model
+        return model  # type: tfstackgan.StackGANModel
 
     pooled_generated_data, pooled_generator_inputs = tensor_pool_fn(
         (model.generated_data, model.generator_inputs))
@@ -127,7 +129,7 @@ def _tensor_pool_adjusted_model(model, tensor_pool_fn):
         with tf.variable_scope(model.discriminator_scope, reuse=True):
             dis_gen_outputs = model.discriminator_fn(pooled_generated_data,
                                                      pooled_generator_inputs)
-        return model._replace(discriminator_gen_outputs=dis_gen_outputs)
+        return model._replace(discriminator_gen_outputs=dis_gen_outputs)  # type: tfstackgan.StackGANModel
     elif isinstance(model, tfgan.ACGANModel):
         with tf.variable_scope(model.discriminator_scope, reuse=True):
             (dis_pooled_gen_outputs,
@@ -136,7 +138,7 @@ def _tensor_pool_adjusted_model(model, tensor_pool_fn):
         return model._replace(
             discriminator_gen_outputs=dis_pooled_gen_outputs,
             discriminator_gen_classification_logits=
-            dis_pooled_gen_classification_logits)
+            dis_pooled_gen_classification_logits)  # type: tfstackgan.StackGANModel
     elif isinstance(model, tfgan.InfoGANModel):
         with tf.variable_scope(model.discriminator_scope, reuse=True):
             (dis_pooled_gen_outputs,
@@ -144,7 +146,7 @@ def _tensor_pool_adjusted_model(model, tensor_pool_fn):
                 pooled_generated_data, pooled_generator_inputs)
         return model._replace(
             discriminator_gen_outputs=dis_pooled_gen_outputs,
-            predicted_distributions=pooled_predicted_distributions)
+            predicted_distributions=pooled_predicted_distributions)  # type: tfstackgan.StackGANModel
     else:
         raise ValueError(
             'Tensor pool does not support `model`: %s.' % type(model))
@@ -152,7 +154,7 @@ def _tensor_pool_adjusted_model(model, tensor_pool_fn):
 
 def dis_loss(
         model,
-        discriminator_loss_fn=tfgan_losses.wasserstein_discriminator_loss,
+        discriminator_loss_fn=tfstackgan_losses.wasserstein_discriminator_loss,
         # Auxiliary losses.
         gradient_penalty_weight=None,
         gradient_penalty_epsilon=1e-10,
@@ -161,10 +163,12 @@ def dis_loss(
         aux_cond_discriminator_weight=None,
         tensor_pool_fn=None,
         # Options.
-        add_summaries=True):
+        add_summaries=True,
+        uncond_loss_coeff=1.0):
     """Returns losses necessary to train discriminator.
     Args:
-      model: A GANModels tuple containing models for each stage.
+      :param model: A GANModels tuple containing models for each stage.
+      :type model: tfstackgan.StackGANModel
       discriminator_loss_fn: The loss function on the discriminator. Takes a
         GANModel tuple.
       gradient_penalty_weight: If not `None`, must be a non-negative Python number
@@ -222,8 +226,13 @@ def dis_loss(
             type(model))
 
     # Create standard losses.
+    pooled_model = _tensor_pool_adjusted_model(model, tensor_pool_fn)
     dis_loss = discriminator_loss_fn(
-        _tensor_pool_adjusted_model(model, tensor_pool_fn),
+        pooled_model.discriminator_real_outputs,
+        pooled_model.disc_real_outputs_uncond,
+        pooled_model.discriminator_gen_outputs,
+        pooled_model.disc_gen_outputs_uncond,
+        uncond_loss_coeff,
         add_summaries=add_summaries)
 
     # Add optional extra losses.
@@ -261,7 +270,8 @@ def gen_loss(
         aux_cond_generator_weight=None,
         # Options.
         add_summaries=True,
-        color_loss_weight=0):
+        color_loss_weight=0,
+        uncond_loss_coeff=1.0):
     """Returns losses necessary to train generator.
     Args:
       model: A GANModel tuple.
@@ -323,6 +333,7 @@ def gen_loss(
             gen_loss += generator_loss_fn(
                 models[i].discriminator_gen_outputs_cond,
                 models[i].discriminator_gen_outputs_uncond,
+                uncond_loss_coeff,
                 add_summaries=add_summaries)
 
             # Add optional extra losses.
