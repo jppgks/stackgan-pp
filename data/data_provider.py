@@ -16,23 +16,11 @@ from models.research.slim.datasets import dataset_utils
 slim = tf.contrib.slim
 
 
-def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
-    """Gets a dataset tuple with instructions for reading cifar10.
-  
-    Args:
-      split_name: A train/test split name.
-      dataset_dir: The base directory of the dataset sources.
-      file_pattern: The file pattern to use when matching the dataset sources.
-        It is assumed that the pattern contains a '%s' string so that the split
-        name can be inserted.
-      reader: The TensorFlow reader type.
-  
-    Returns:
-      A `Dataset` namedtuple.
-  
-    Raises:
-      ValueError: if `split_name` is not a valid train/test split.
-    """
+def get_images_dataset(split_name,
+                       dataset_dir,
+                       batch_size,
+                       file_pattern=None,
+                       reader=None):
     _FILE_PATTERN = '%s*'
 
     SPLITS_TO_SIZES = {'train': 5394, 'test': 5794, 'val': 600}
@@ -98,13 +86,25 @@ def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
     if dataset_utils.has_labels(dataset_dir):
         labels_to_names = dataset_utils.read_label_file(dataset_dir)
 
-    return slim.dataset.Dataset(
-        data_sources=file_pattern,
-        reader=reader,
-        decoder=decoder,
-        num_samples=SPLITS_TO_SIZES[split_name],
-        items_to_descriptions=_ITEMS_TO_DESCRIPTIONS,
-        labels_to_names=labels_to_names)
+    # Create tf.data.Dataset
+    filenames = tf.gfile.Glob(file_pattern)
+    images_dataset = tf.data.TFRecordDataset(filenames)
+    # Parse TFRecord.
+    def parser(record):
+        parsed = tf.parse_single_example(record, keys_to_features)
+        items = decoder.list_items()
+        tensors = decoder.decode(record, items)
+        items_to_tensors = dict(zip(items, tensors))
+        return items_to_tensors['image']  # , items_to_tensors['label']
+    images_dataset = images_dataset.map(parser)
+    # TODO(joppe): if needed, normalize like StackGAN pytorch source
+    # Normalize.
+    images_dataset = images_dataset.map(
+        lambda image: (tf.to_float(image) - 128.0) / 128.0)
+    images_dataset = images_dataset.batch(batch_size)
+    images_dataset = images_dataset.repeat()
+
+    return images_dataset
 
 
 def load_text_embeddings(text_data_dir):
@@ -150,13 +150,16 @@ def provide_data(batch_size,
     Raises:
       ValueError: if the split_name is not either 'train' or 'test'.
     """
-    dataset = get_split(split_name, image_dataset_dir)
-    provider = slim.dataset_data_provider.DatasetDataProvider(
-        dataset,
-        common_queue_capacity=5 * batch_size,
-        common_queue_min=batch_size,
-        shuffle=(split_name == 'train'))
-    [image] = provider.get(['image'])
+    images_dataset = get_images_dataset(split_name,
+                                        image_dataset_dir,
+                                        batch_size)
+
+    # provider = slim.dataset_data_provider.DatasetDataProvider(
+    #     images_dataset,
+    #     common_queue_capacity=5 * batch_size,
+    #     common_queue_min=batch_size,
+    #     shuffle=(split_name == 'train'))
+    # [image] = provider.get(['image'])
 
     # Preprocess the images.
     # img_resolution = image.get_shape().as_list()[0]  # , or [1] bc img is square
@@ -173,9 +176,7 @@ def provide_data(batch_size,
     # image = tf.random_crop(image, crop_size)
     # - flip horizontally, and
     # image = tf.image.random_flip_up_down(image)
-    # TODO(joppe): if needed, normalize like StackGAN pytorch source
-    # - normalize.
-    image = (tf.to_float(image) - 128.0) / 128.0
+
 
     # Get text embedding.
     def _select_one_caption(embedded_captions):
@@ -191,20 +192,23 @@ def provide_data(batch_size,
     embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
         embedded_captions)
     embedded_captions_dataset = embedded_captions_dataset.map(
-        lambda emb: tf.py_func(_select_one_caption, emb, emb.dtype))
-    epochs = 100
-    embedded_captions_dataset = embedded_captions_dataset.repeat(epochs)
-    embedded_captions_iterator = embedded_captions_dataset.make_one_shot_iterator()
-    embedded_caption = embedded_captions_iterator.get_next()
+        lambda emb: tf.py_func(_select_one_caption, [emb], [emb.dtype]))
+    embedded_captions_dataset = embedded_captions_dataset.batch(batch_size)
+    embedded_captions_dataset = embedded_captions_dataset.repeat()
 
-    # Creates a QueueRunner for the pre-fetching operation.
-    images, embedded_caption = tf.train.batch(
-        [image, embedded_caption],
-        batch_size=batch_size,
-        num_threads=32,
-        capacity=5 * batch_size)
+    # # Creates a QueueRunner for the pre-fetching operation.
+    # images = tf.train.batch(
+    #     [image],
+    #     batch_size=batch_size,
+    #     num_threads=32,
+    #     capacity=5 * batch_size)
 
-    return images, embedded_caption
+    image_caption_dataset = tf.data.Dataset.zip(
+        (images_dataset, embedded_captions_dataset))
+    image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
+    image, embedded_caption = image_caption_iterator.get_next()
+
+    return image, embedded_caption
 
 
 def get_training_data_iterator(batch_size,
