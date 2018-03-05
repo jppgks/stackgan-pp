@@ -68,11 +68,12 @@ def get_images_dataset(split_name,
     images_dataset = tf.data.TFRecordDataset(filenames)
 
     # Parse TFRecord.
-    def parser(record):
-        parsed = tf.parse_single_example(record, keys_to_features)
+    def parser(serialized):
+        parsed = tf.parse_single_example(serialized, keys_to_features)
         image = tf.image.decode_jpeg(parsed['image/encoded'])
         image = tf.image.resize_image_with_crop_or_pad(image, 64, 64)
         image = tf.to_float(image)
+        print(image.shape)
         image.set_shape((64, 64, 3,))
         return image
 
@@ -80,9 +81,20 @@ def get_images_dataset(split_name,
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
     images_dataset = images_dataset.map(
         lambda image: (image - 128.0) / 128.0)
+    images_dataset = images_dataset.padded_batch(batch_size, (64, 64, 3,))
+
+    def _predicate(*xs):
+        """Return `True` if this element is a full batch."""
+        # Extract the dynamic batch size from the first component of the flattened
+        # batched element.
+        first_component = xs[0]
+        tensor_batch_size = tf.shape(
+            first_component, out_type=tf.int32)[0]
+
+        return tf.equal(batch_size, tensor_batch_size)
+
+    images_dataset = images_dataset.filter(_predicate)
     images_dataset = images_dataset.repeat()
-    images_dataset = images_dataset.apply(
-        tf.contrib.data.batch_and_drop_remainder(batch_size))
 
     return images_dataset
 
@@ -136,9 +148,15 @@ def provide_data(batch_size,
 
     # Get text embedding.
     def parser(embedded_captions):
-        index = tf.random_uniform([1], minval=0, maxval=(embedded_captions.shape[0] - 1), dtype=tf.int8)
+        import random
+        # index = tf.random_uniform(
+        #     [1],
+        #     minval=0,
+        #     maxval=embedded_captions.get_shape().as_list()[0] - 1)
+        index = random.randint(0,
+                               embedded_captions.get_shape().as_list()[0] - 1)
         selected_caption = embedded_captions[index, :]
-        selected_caption.set_shape((1, 1024,))
+        selected_caption.set_shape((1024,))
         return selected_caption
 
     embedded_captions = load_text_embeddings(
@@ -146,8 +164,6 @@ def provide_data(batch_size,
     embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
         embedded_captions)
     embedded_captions_dataset = embedded_captions_dataset.map(parser)
-    embedded_captions_dataset = embedded_captions_dataset.map(
-        lambda tuple: tuple[0])
     embedded_captions_dataset = embedded_captions_dataset.repeat()
     embedded_captions_dataset = embedded_captions_dataset.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
