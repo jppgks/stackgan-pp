@@ -17,7 +17,7 @@ def log(x):
 # setups need the gradient of gradient FusedBatchNormGrad.
 def dcgan_generator(inputs,
                     depth=64,
-                    final_size=32,
+                    final_size=64,
                     num_outputs=3,
                     is_training=True,
                     reuse=None,
@@ -143,7 +143,7 @@ def augment(conditioning, noise_dim: int):
     return augmented_conditioning, mu, logvar
 
 
-def generator(inputs, final_size=32, apply_batch_norm=False):
+def generator(inputs, final_size=64, apply_batch_norm=False):
     # TODO: docstring
     """Generator to produce CIFAR images.
     Args: 

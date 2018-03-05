@@ -58,7 +58,7 @@ def gan_model(  # Lambdas defining models.
                 # Nested scope, specific to this generator stage.
                 generator_inputs = generator_input_fn()
                 generator_inputs = _convert_tensor_or_l_or_d(generator_inputs)
-                kwargs = {'final_size': 2 ** (5 + stage),
+                kwargs = {'final_size': 2 ** (6 + stage),
                           'apply_batch_norm': apply_batch_norm}
                 generated_data, generator_hidden_code = generator_fn(
                     generator_inputs, **kwargs)
@@ -274,7 +274,7 @@ def gen_loss(
         add_summaries=True,
         color_loss_weight=0,
         uncond_loss_coeff=1.0,
-        kl_loss_coeff=1.0,
+        kl_loss_coeff=2.0,
         mu=None,
         logvar=None):
     """Returns losses necessary to train generator.

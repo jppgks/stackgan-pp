@@ -2,9 +2,9 @@ from collections import namedtuple
 
 import tensorflow as tf
 
-import data_provider
 import networks
 import tfstackgan
+from data import data_provider
 
 # Useful aliases.
 tfgan = tf.contrib.gan
@@ -68,7 +68,8 @@ def main(_):
     # Get training data.
     # TODO(joppe): have data provider return text embedding
     images, text_embedding = data_provider.get_training_data_iterator(FLAGS.batch_size,
-                                                      FLAGS.dataset_dir)
+                                                                      FLAGS.dataset_dir,
+                                                                      FLAGS.stack_depth)
 
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
