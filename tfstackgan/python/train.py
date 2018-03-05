@@ -338,8 +338,8 @@ def gen_loss(
     for i in range(len(models)):
         with tf.name_scope('loss_stage_' + str(i)):
             gen_loss += generator_loss_fn(
-                models[i].discriminator_gen_outputs_cond,
-                models[i].discriminator_gen_outputs_uncond,
+                models[i].discriminator_gen_outputs,
+                models[i].disc_gen_outputs_uncond,
                 uncond_loss_coeff,
                 add_summaries=add_summaries)
 
@@ -353,7 +353,7 @@ def gen_loss(
                     models[i], add_summaries=add_summaries)
                 gen_loss += aux_cond_generator_weight * ac_gen_loss
 
-    if mu and logvar:
+    if mu is not None and logvar is not None:
         gen_loss += kl_loss_coeff * tfstackgan_losses.kl_loss(mu, logvar)
 
     # Gathers auxiliary losses.
