@@ -72,6 +72,7 @@ def get_images_dataset(split_name,
         parsed = tf.parse_single_example(record, keys_to_features)
         image = tf.image.decode_jpeg(parsed['image/encoded'])
         image = tf.to_float(image)
+        image.set_shape((64, 64, 3,))
         return image
 
     images_dataset = images_dataset.map(parser)
@@ -133,16 +134,22 @@ def provide_data(batch_size,
                                         batch_size)
 
     # Get text embedding.
-    def _select_one_caption(embedded_captions):
-        import random
-        index = random.randint(0, embedded_captions.shape[0] - 1)
-        return embedded_captions[index, :]
+    def parser(embedded_captions):
+        def _select_one_caption():
+            import random
+            index = random.randint(0, embedded_captions.shape[0] - 1)
+            return embedded_captions[index, :]
 
-    embedded_captions = load_text_embeddings(text_dataset_dir)
+        parsed = tf.py_func(_select_one_caption, [],
+                            embedded_captions.dtype)
+        parsed.set_shape((1, 1024,))
+        return parsed
+
+    embedded_captions = load_text_embeddings(
+        text_dataset_dir)  # (8855, 10, 1024)
     embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
         embedded_captions)
-    embedded_captions_dataset = embedded_captions_dataset.map(
-        lambda emb: tf.py_func(_select_one_caption, [emb], [emb.dtype]))
+    embedded_captions_dataset = embedded_captions_dataset.map(parser)
     embedded_captions_dataset = embedded_captions_dataset.map(
         lambda tuple: tuple[0])
     embedded_captions_dataset = embedded_captions_dataset.repeat()
