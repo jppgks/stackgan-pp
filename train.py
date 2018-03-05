@@ -4,6 +4,8 @@ import tensorflow as tf
 
 import networks
 import tfstackgan
+
+tfstackgan_losses = tfstackgan.losses
 from data import data_provider
 
 # Useful aliases.
@@ -117,7 +119,7 @@ def main(_):
                 with tf.variable_scope('losses'):
                     current_stage_dis_loss = tfstackgan.dis_loss(
                         gan_models[stage],
-                        discriminator_loss_fn=tfstackgan.losses.wasserstein_discriminator_loss,
+                        discriminator_loss_fn=tfstackgan_losses.wasserstein_discriminator_loss,
                         gradient_penalty_weight=FLAGS.gradient_penalty)
                     dis_losses.append(current_stage_dis_loss)
     with tf.variable_scope(gan_models[-1].generator_scope):
@@ -125,11 +127,11 @@ def main(_):
             with tf.variable_scope('loss'):
                 gen_loss_tuple = tfstackgan.gen_loss(
                     gan_models,
-                    generator_loss_fn=tfstackgan.losses.wasserstein_generator_loss,
+                    generator_loss_fn=tfstackgan_losses.wasserstein_generator_loss,
                     color_loss_weight=FLAGS.color_loss,
                     uncond_loss_coeff=FLAGS.uncond_loss_coeff,
                     mu=mu,
-                    logvar=logvar,)
+                    logvar=logvar, )
 
     # Instantiate train ops.
     # Generator's learning rate decays, while discriminator's stays constant.
