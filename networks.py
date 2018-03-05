@@ -128,8 +128,8 @@ def augment(conditioning, noise_dim: int):
         as a function of `conditioning`.
     """
     # Encode
-    net = slim.fully_connected(conditioning, noise_dim, activation_fn=None)
-    split = tf.shape(net)[1]
+    net = slim.fully_connected(conditioning, noise_dim, activation_fn=None)  # type: tf.Tensor
+    split = net.get_shape().as_list()[1]
     split = int(split / 2)
     glu = net[:, :split] * tf.sigmoid(net[:, split:])
     mu = glu[:, :noise_dim]
