@@ -77,8 +77,7 @@ def main(_):
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
-    augmented_conditioning, mu, logvar = networks.augment(caption_embedding,
-                                                          FLAGS.noise_dim)
+    augmented_conditioning, mu, logvar = networks.augment(caption_embedding)
     gan_models = []
     for stage in range(FLAGS.stack_depth):
         kwargs = {

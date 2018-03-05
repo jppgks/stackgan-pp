@@ -176,7 +176,7 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
     hidden_code = end_points['deconv%i' % (num_layers)]
 
     # Make sure output lies between [-1, 1].
-    return tf.tanh(images), hidden_code, mu, logvar
+    return tf.tanh(images), hidden_code
 
 
 def _validate_image_inputs(inputs):

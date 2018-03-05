@@ -56,8 +56,10 @@ def gan_model(  # Lambdas defining models.
                     reuse=tf.AUTO_REUSE) as current_gen_scope:
                 print(tf.get_variable_scope().name)
                 # Nested scope, specific to this generator stage.
-                generator_inputs = generator_input_fn()
-                generator_inputs = _convert_tensor_or_l_or_d(generator_inputs)
+                is_init_stage, noise, conditioning = generator_input_fn()
+                generator_inputs = _convert_tensor_or_l_or_d(
+                    (noise, conditioning))
+                generator_inputs = [is_init_stage] + generator_inputs
                 kwargs = {'final_size': 2 ** (6 + stage),
                           'apply_batch_norm': apply_batch_norm}
                 generated_data, generator_hidden_code = generator_fn(
