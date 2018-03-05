@@ -23,9 +23,8 @@ class StackGANModel(
     namedtuple('StackGANModel', tfgan.GANModel._fields + (
             'generator_hidden_code',
             'stage',
-            'disc_real_outputs_uncond'
-            'disc_gen_outputs_uncond',
-    ))):
+            'disc_real_outputs_uncond',
+            'disc_gen_outputs_uncond',))):
     '''Modified GANModel namedtuple for StackGAN architecture.
   
     Represents a (generator, discriminator) pair at one particular stage.

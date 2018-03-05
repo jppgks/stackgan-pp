@@ -102,7 +102,7 @@ def gan_model(  # Lambdas defining models.
         generator_hidden_code,
         stage,
         disc_real_outputs_uncond,
-        disc_gen_outputs_uncond, )
+        disc_gen_outputs_uncond)
 
 
 def _tensor_pool_adjusted_model(model,

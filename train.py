@@ -210,7 +210,7 @@ def _get_generator_input_for_stage(models, stage, noise_sample, conditioning):
 
 
 def _get_real_data_for_stage(images, i):
-    resolution = 2 ** (5 + i)
+    resolution = 2 ** (6 + i)
     current_res_images = tf.image.resize_images(images,
                                                 size=[resolution, resolution])
     current_res_images.set_shape([FLAGS.batch_size, resolution, resolution, 3])

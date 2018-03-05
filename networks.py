@@ -257,7 +257,7 @@ def dcgan_discriminator(inputs,
 
 def _last_conv_layer(end_points):
     """"Returns the last convolutional layer from an endpoints dictionary."""
-    conv_list = [k if k[:4] == 'conv' else None for k in end_points.keys()]
+    conv_list = [k if k[:4] == 'conv' else '' for k in end_points.keys()]
     conv_list.sort()
     return end_points[conv_list[-1]]
 
@@ -283,10 +283,13 @@ def discriminator(img, conditioning, apply_batch_norm=False):
 
     # TODO(joppe): have dcgan_discriminator return the right logits
     net = _last_conv_layer(end_points)
-    conditioning = tf.reshape(conditioning, [-1, tf.size(conditioning), 1, 1])
-    conditioning = tf.tile(conditioning,
-                           [1, 1, 4, 4])
-    conditioned = tf.concat([conditioning, net], 1)  # -1
+    embedding_dim = 128
+    conditioning = tf.reshape(conditioning, [-1, embedding_dim, 1, 1])
+    conditioning = tf.tile(conditioning, [1, 1, 4, 4])
+    batch_size = img.get_shape().as_list()[0]
+    conditioned = tf.concat(
+        [conditioning, tf.reshape(net, [batch_size, embedding_dim, 4, 4])],
+        1)  # -1
 
     # Block3x3_leakRelu(ndf * 8 + efg, ndf * 8)
     normalizer_fn_ = slim.batch_norm if apply_batch_norm else None

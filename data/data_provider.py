@@ -161,9 +161,6 @@ def provide_data(batch_size,
     image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
     image, embedded_caption = image_caption_iterator.get_next()
 
-    print(image.shape)
-    print(embedded_caption.shape)
-
     return image, embedded_caption
 
 
