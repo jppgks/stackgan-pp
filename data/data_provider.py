@@ -160,7 +160,8 @@ def provide_data(batch_size,
     # Preprocess the images.
     crop_size = 64 * (2 ** (stack_depth - 1))
     # - resize,
-    image = tf.image.resize_images(image, int(crop_size * 76 / 64))
+    size = [int(crop_size * 76 / 64)] * 2
+    image = tf.image.resize_images(image, size=size)
     # - crop,
     image = tf.random_crop(image, crop_size)
     # - flip horizontally, and
