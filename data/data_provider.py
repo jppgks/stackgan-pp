@@ -136,15 +136,10 @@ def provide_data(batch_size,
 
     # Get text embedding.
     def parser(embedded_captions):
-        def _select_one_caption():
-            import random
-            index = random.randint(0, embedded_captions.shape[0] - 1)
-            return embedded_captions[index, :]
-
-        parsed = tf.py_func(_select_one_caption, [],
-                            embedded_captions.dtype)
-        parsed.set_shape((1, 1024,))
-        return parsed
+        index = tf.random_uniform([1], minval=0, maxval=(embedded_captions.shape[0] - 1), dtype=tf.int8)
+        selected_caption = embedded_captions[index, :]
+        selected_caption.set_shape((1, 1024,))
+        return selected_caption
 
     embedded_captions = load_text_embeddings(
         text_dataset_dir)  # (8855, 10, 1024)
