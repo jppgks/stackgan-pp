@@ -158,9 +158,9 @@ def provide_data(batch_size,
     [image] = provider.get(['image'])
 
     # Preprocess the images.
-    crop_size = 64 * (2 ** (stack_depth - 1))
+    crop_size = [64 * (2 ** (stack_depth - 1))] * 2
     # - resize,
-    size = [int(crop_size * 76 / 64)] * 2
+    size = [int(crop_size[0] * 76 / 64)] * 2
     image = tf.image.resize_images(image, size=size)
     # - crop,
     image = tf.random_crop(image, crop_size)
