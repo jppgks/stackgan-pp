@@ -118,22 +118,22 @@ def dcgan_generator(inputs,
                 return logits, end_points
 
 
-def augment(conditioning, noise_dim: int):
+def augment(conditioning, new_dim=128):
     """Increases the number of conditioning variables available for training.
 
     :param conditioning: Text embedding
-    :param noise_dim: 
+    :param new_dim: 
     :return: `conditioning`, augmented with additional latent variables, 
         sampled from a Gaussian distribution, with mean and standard deviation 
         as a function of `conditioning`.
     """
     # Encode
-    net = slim.fully_connected(conditioning, noise_dim, activation_fn=None)  # type: tf.Tensor
+    net = slim.fully_connected(conditioning, new_dim * 4, activation_fn=None)
     split = net.get_shape().as_list()[1]
     split = int(split / 2)
     glu = net[:, :split] * tf.sigmoid(net[:, split:])
-    mu = glu[:, :noise_dim]
-    logvar = glu[:, noise_dim:]
+    mu = glu[:, :new_dim]
+    logvar = glu[:, new_dim:]
 
     # Reparametrize
     std = tf.exp(logvar * 0.5)
