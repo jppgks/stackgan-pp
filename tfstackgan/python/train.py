@@ -103,7 +103,7 @@ def gan_model(  # Lambdas defining models.
         disc_gen_outputs_uncond, )
 
 
-def _tensor_pool_adjusted_model(model: tfstackgan.StackGANModel,
+def _tensor_pool_adjusted_model(model,
                                 tensor_pool_fn):
     """Adjusts model using `tensor_pool_fn`.
     Args:
