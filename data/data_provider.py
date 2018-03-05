@@ -78,8 +78,9 @@ def get_images_dataset(split_name,
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
     images_dataset = images_dataset.map(
         lambda image: (image - 128.0) / 128.0)
-    images_dataset = images_dataset.batch(batch_size)
     images_dataset = images_dataset.repeat()
+    images_dataset = images_dataset.apply(
+        tf.contrib.data.batch_and_drop_remainder(batch_size))
 
     return images_dataset
 
@@ -142,16 +143,19 @@ def provide_data(batch_size,
         embedded_captions)
     embedded_captions_dataset = embedded_captions_dataset.map(
         lambda emb: tf.py_func(_select_one_caption, [emb], [emb.dtype]))
-    embedded_captions_dataset = embedded_captions_dataset.batch(batch_size)
+    embedded_captions_dataset = embedded_captions_dataset.map(
+        lambda tuple: tuple[0])
     embedded_captions_dataset = embedded_captions_dataset.repeat()
+    embedded_captions_dataset = embedded_captions_dataset.apply(
+        tf.contrib.data.batch_and_drop_remainder(batch_size))
 
     image_caption_dataset = tf.data.Dataset.zip(
-        (images_dataset, embedded_captions_dataset))
+        (images_dataset, embedded_captions_dataset))  # type: tf.data.Dataset
     image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
     image, embedded_caption = image_caption_iterator.get_next()
 
-    print('image: ' + repr(image))
-    print('emb: ' + repr(embedded_caption))
+    print(image.shape)
+    print(embedded_caption.shape)
 
     return image, embedded_caption
 
