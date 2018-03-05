@@ -1,5 +1,6 @@
 import os
 import sys
+from functools import partial
 
 import numpy
 import tensorflow as tf
@@ -158,14 +159,20 @@ def provide_data(batch_size,
     [image] = provider.get(['image'])
 
     # Preprocess the images.
-    crop_size = [64 * (2 ** (stack_depth - 1))] * 2
-    # - resize,
-    size = [int(crop_size[0] * 76 / 64)] * 2
-    image = tf.image.resize_images(image, size=size)
-    # - crop,
-    image = tf.random_crop(image, crop_size)
+    # img_resolution = image.get_shape().as_list()[0]  # , or [1] bc img is square
+    # crop_size = [img_resolution *
+    #              (2 ** (stack_depth - 1))] * 2  # [i] * 2 == [i, i]
+    # # - resize,
+    # ratio = int(crop_size[0] * 76 / 64)
+    # new_size = [image.get_shape().as_list()[0] * ratio] * 2
+    # print(new_size)
+    # image = tf.image.resize_images(image,
+    #                                size=new_size)
+    # print(image.get_shape().as_list())
+    # # - crop,
+    # image = tf.random_crop(image, crop_size)
     # - flip horizontally, and
-    image = tf.image.random_flip_up_down(image)
+    # image = tf.image.random_flip_up_down(image)
     # TODO(joppe): if needed, normalize like StackGAN pytorch source
     # - normalize.
     image = (tf.to_float(image) - 128.0) / 128.0
