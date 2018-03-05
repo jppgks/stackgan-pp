@@ -19,8 +19,7 @@ slim = tf.contrib.slim
 def get_images_dataset(split_name,
                        dataset_dir,
                        batch_size,
-                       file_pattern=None,
-                       reader=None):
+                       file_pattern=None):
     _FILE_PATTERN = '%s*'
 
     SPLITS_TO_SIZES = {'train': 5394, 'test': 5794, 'val': 600}
@@ -64,15 +63,6 @@ def get_images_dataset(split_name,
         'image/object/id': tf.VarLenFeature(dtype=tf.string)
     }
 
-    items_to_handlers = {
-        # TODO(joppe): replace with actual image size
-        'image': slim.tfexample_decoder.Image(shape=[64, 64, 3]),
-        'label': slim.tfexample_decoder.Tensor('image/class/label'),
-    }
-
-    decoder = slim.tfexample_decoder.TFExampleDecoder(
-        keys_to_features, items_to_handlers)
-
     # Create tf.data.Dataset
     filenames = tf.gfile.Glob(file_pattern)
     images_dataset = tf.data.TFRecordDataset(filenames)
@@ -80,16 +70,14 @@ def get_images_dataset(split_name,
     # Parse TFRecord.
     def parser(record):
         parsed = tf.parse_single_example(record, keys_to_features)
-        items = decoder.list_items()
-        tensors = decoder.decode(parsed, items)
-        items_to_tensors = dict(zip(items, tensors))
-        return items_to_tensors['image']  # , items_to_tensors['label']
+        image = tf.image.decode_jpeg(parsed['image/encoded'])
+        image = tf.to_float(image)
+        return image
 
     images_dataset = images_dataset.map(parser)
-    # TODO(joppe): if needed, normalize like StackGAN pytorch source
-    # Normalize.
+    # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
     images_dataset = images_dataset.map(
-        lambda image: (tf.to_float(image) - 128.0) / 128.0)
+        lambda image: (image - 128.0) / 128.0)
     images_dataset = images_dataset.batch(batch_size)
     images_dataset = images_dataset.repeat()
 
