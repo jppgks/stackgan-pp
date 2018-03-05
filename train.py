@@ -41,7 +41,7 @@ flags.DEFINE_float('decay_rate', 0.9,
 flags.DEFINE_float('discriminator_lr', 0.0001,
                    'Discriminator learning rate.')
 
-flags.DEFINE_float('gradient_penalty', 1, 'Gradient penalty weight.')
+flags.DEFINE_float('gradient_penalty', None, 'Gradient penalty weight.')
 
 flags.DEFINE_boolean('apply_batch_norm', False,
                      'Apply batch normalization.')
