@@ -71,6 +71,7 @@ def get_images_dataset(split_name,
     def parser(record):
         parsed = tf.parse_single_example(record, keys_to_features)
         image = tf.image.decode_jpeg(parsed['image/encoded'])
+        image = tf.image.resize_image_with_crop_or_pad(image, 64, 64)
         image = tf.to_float(image)
         image.set_shape((64, 64, 3,))
         return image
