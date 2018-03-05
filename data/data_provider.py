@@ -25,21 +25,12 @@ def get_images_dataset(split_name,
 
     SPLITS_TO_SIZES = {'train': 5394, 'test': 5794, 'val': 600}
 
-    _ITEMS_TO_DESCRIPTIONS = {
-        'image': 'A [64 x 64 x 3] color image.',
-        'label': 'A single integer between 0 and 9',
-    }
-
     if split_name not in SPLITS_TO_SIZES:
         raise ValueError('split name %s was not recognized.' % split_name)
 
     if not file_pattern:
         file_pattern = _FILE_PATTERN
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
-
-    # Allowing None in the signature so that dataset_factory can use the default.
-    if not reader:
-        reader = tf.TFRecordReader
 
     keys_to_features = {
         'image/height': tf.FixedLenFeature([], tf.int64),
@@ -82,20 +73,18 @@ def get_images_dataset(split_name,
     decoder = slim.tfexample_decoder.TFExampleDecoder(
         keys_to_features, items_to_handlers)
 
-    labels_to_names = None
-    if dataset_utils.has_labels(dataset_dir):
-        labels_to_names = dataset_utils.read_label_file(dataset_dir)
-
     # Create tf.data.Dataset
     filenames = tf.gfile.Glob(file_pattern)
     images_dataset = tf.data.TFRecordDataset(filenames)
+
     # Parse TFRecord.
     def parser(record):
         parsed = tf.parse_single_example(record, keys_to_features)
         items = decoder.list_items()
-        tensors = decoder.decode(record, items)
+        tensors = decoder.decode(parsed, items)
         items_to_tensors = dict(zip(items, tensors))
         return items_to_tensors['image']  # , items_to_tensors['label']
+
     images_dataset = images_dataset.map(parser)
     # TODO(joppe): if needed, normalize like StackGAN pytorch source
     # Normalize.
@@ -154,36 +143,8 @@ def provide_data(batch_size,
                                         image_dataset_dir,
                                         batch_size)
 
-    # provider = slim.dataset_data_provider.DatasetDataProvider(
-    #     images_dataset,
-    #     common_queue_capacity=5 * batch_size,
-    #     common_queue_min=batch_size,
-    #     shuffle=(split_name == 'train'))
-    # [image] = provider.get(['image'])
-
-    # Preprocess the images.
-    # img_resolution = image.get_shape().as_list()[0]  # , or [1] bc img is square
-    # crop_size = [img_resolution *
-    #              (2 ** (stack_depth - 1))] * 2  # [i] * 2 == [i, i]
-    # # - resize,
-    # ratio = int(crop_size[0] * 76 / 64)
-    # new_size = [image.get_shape().as_list()[0] * ratio] * 2
-    # print(new_size)
-    # image = tf.image.resize_images(image,
-    #                                size=new_size)
-    # print(image.get_shape().as_list())
-    # # - crop,
-    # image = tf.random_crop(image, crop_size)
-    # - flip horizontally, and
-    # image = tf.image.random_flip_up_down(image)
-
-
     # Get text embedding.
     def _select_one_caption(embedded_captions):
-        # index = tf.random_uniform([1],
-        #                           minval=0,
-        #                           maxval=(embedded_captions.shape[0] - 1),
-        #                           dtype=tf.int8)
         import random
         index = random.randint(0, embedded_captions.shape[0] - 1)
         return embedded_captions[index, :]
@@ -195,13 +156,6 @@ def provide_data(batch_size,
         lambda emb: tf.py_func(_select_one_caption, [emb], [emb.dtype]))
     embedded_captions_dataset = embedded_captions_dataset.batch(batch_size)
     embedded_captions_dataset = embedded_captions_dataset.repeat()
-
-    # # Creates a QueueRunner for the pre-fetching operation.
-    # images = tf.train.batch(
-    #     [image],
-    #     batch_size=batch_size,
-    #     num_threads=32,
-    #     capacity=5 * batch_size)
 
     image_caption_dataset = tf.data.Dataset.zip(
         (images_dataset, embedded_captions_dataset))
