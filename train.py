@@ -49,10 +49,11 @@ flags.DEFINE_string('train_log_dir', '/tmp/cifar-stackgan-3stage',
                     'continue training from a checkpoint in this directory if '
                     'one exists.')
 
-flags.DEFINE_string('dataset_dir', '/tmp/cifar-data',
-                    'Location of the training data, if it has already been '
-                    'downloaded. Otherwise, the training data will be '
-                    'downloaded to this folder.')
+flags.DEFINE_string('image_dataset_dir', '',
+                    '')  # TODO: docstring
+
+flags.DEFINE_string('text_dataset_dir', '',
+                    '')  # TODO: docstring
 
 flags.DEFINE_integer('max_number_of_steps', 1000000,
                      # num_samples / batch_size * 5 * 120 = 180000
@@ -67,14 +68,16 @@ def main(_):
 
     # Get training data.
     # TODO(joppe): have data provider return text embedding
-    images, text_embedding = data_provider.get_training_data_iterator(FLAGS.batch_size,
-                                                                      FLAGS.dataset_dir,
-                                                                      FLAGS.stack_depth)
+    images, caption_embedding = data_provider.get_training_data_iterator(
+        FLAGS.batch_size,
+        FLAGS.image_dataset_dir,
+        FLAGS.text_dataset_dir,
+        FLAGS.stack_depth)
 
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
-    augmented_conditioning, mu, logvar = networks.augment(text_embedding,
+    augmented_conditioning, mu, logvar = networks.augment(caption_embedding,
                                                           FLAGS.noise_dim)
     gan_models = []
     for stage in range(FLAGS.stack_depth):
