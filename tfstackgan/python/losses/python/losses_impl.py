@@ -4,6 +4,8 @@ __all__ = [
     'color_loss',
     'wasserstein_generator_loss',
     'wasserstein_discriminator_loss',
+    'minimax_generator_loss',
+    'minimax_discriminator_loss',
     'kl_loss',
 ]
 
@@ -154,7 +156,8 @@ def wasserstein_discriminator_loss(
       A loss Tensor. The shape depends on `reduction`.
     """
     with tf.name_scope(scope, 'discriminator_wasserstein_loss', (
-            discriminator_real_outputs_cond, discriminator_gen_outputs_cond,
+            discriminator_real_outputs_cond, discriminator_real_outputs_uncond,
+            discriminator_gen_outputs_cond, discriminator_gen_outputs_uncond,
             real_weights,
             generated_weights)) as scope:
         # Conditional loss
@@ -193,13 +196,106 @@ def wasserstein_discriminator_loss(
 
         # Total loss
         loss = cond_loss - (uncond_loss_coeff * uncond_loss)
-        tf.losses.add_loss(uncond_loss, loss_collection)
+        tf.losses.add_loss(loss, loss_collection)
 
         if add_summaries:
             tf.summary.scalar('discriminator_gen_wass_loss',
                               loss_on_generated_cond)
             tf.summary.scalar('discriminator_real_wass_loss', loss_on_real_cond)
             tf.summary.scalar('discriminator_wass_loss', loss)
+
+    return loss
+
+
+def minimax_generator_loss(
+        discriminator_gen_outputs_cond,
+        discriminator_gen_outputs_uncond,
+        uncond_loss_coeff,
+        label_smoothing=0.0,
+        weights=1.0,
+        scope=None,
+        loss_collection=tf.GraphKeys.LOSSES,
+        reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS,
+        add_summaries=False):
+    with tf.name_scope(scope, 'generator_modified_loss',
+                        [discriminator_gen_outputs_cond,
+                         discriminator_gen_outputs_uncond]) as scope:
+        loss_cond = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(discriminator_gen_outputs_cond),
+            discriminator_gen_outputs_cond, weights, label_smoothing, scope,
+            loss_collection, reduction)
+
+        loss_uncond = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(discriminator_gen_outputs_uncond),
+            discriminator_gen_outputs_uncond, weights, label_smoothing, scope,
+            loss_collection, reduction)
+
+        loss = loss_cond + uncond_loss_coeff * loss_uncond
+
+        if add_summaries:
+            tf.summary.scalar('generator_modified_loss', loss)
+
+    return loss
+
+
+def minimax_discriminator_loss(
+        discriminator_real_outputs_cond,
+        discriminator_real_outputs_uncond,
+        discriminator_gen_outputs_cond,
+        discriminator_gen_outputs_uncond,
+        uncond_loss_coeff,
+        label_smoothing=0.25,
+        real_weights=1.0,
+        generated_weights=1.0,
+        scope=None,
+        loss_collection=tf.GraphKeys.LOSSES,
+        reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS,
+        add_summaries=False):
+    with tf.name_scope(scope, 'discriminator_minimax_loss', (
+            discriminator_real_outputs_cond, discriminator_real_outputs_uncond,
+            discriminator_gen_outputs_cond, discriminator_gen_outputs_uncond,
+            real_weights,
+            generated_weights, label_smoothing)) as scope:
+        # Conditional loss
+
+        # -log((1 - label_smoothing) - sigmoid(D(x)))
+        loss_on_real_cond = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(discriminator_real_outputs_cond),
+            discriminator_real_outputs_cond, real_weights, label_smoothing,
+            scope,
+            loss_collection=None, reduction=reduction)
+        # -log(- sigmoid(D(G(x))))
+        loss_on_generated_cond = tf.losses.sigmoid_cross_entropy(
+            tf.zeros_like(discriminator_gen_outputs_cond),
+            discriminator_gen_outputs_cond, generated_weights, scope=scope,
+            loss_collection=None, reduction=reduction)
+
+        cond_loss = loss_on_real_cond + loss_on_generated_cond
+
+        # Unconditional loss
+
+        # -log((1 - label_smoothing) - sigmoid(D(x)))
+        loss_on_real_uncond = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(discriminator_real_outputs_uncond),
+            discriminator_real_outputs_uncond, real_weights, label_smoothing,
+            scope,
+            loss_collection=None, reduction=reduction)
+        # -log(- sigmoid(D(G(x))))
+        loss_on_generated_uncond = tf.losses.sigmoid_cross_entropy(
+            tf.zeros_like(discriminator_gen_outputs_uncond),
+            discriminator_gen_outputs_uncond, generated_weights, scope=scope,
+            loss_collection=None, reduction=reduction)
+
+        uncond_loss = loss_on_generated_uncond + loss_on_real_uncond
+
+        # Total loss
+        loss = cond_loss + (uncond_loss_coeff * uncond_loss)
+        tf.losses.add_loss(loss, loss_collection)
+
+        if add_summaries:
+            # tf.summary.scalar('discriminator_gen_minimax_loss', loss_on_generated)
+            # tf.summary.scalar('discriminator_real_minimax_loss', loss_on_real)
+            tf.summary.scalar('discriminator_minimax_loss', loss)
 
     return loss
 
