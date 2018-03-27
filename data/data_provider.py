@@ -16,6 +16,7 @@ slim = tf.contrib.slim
 def get_images_dataset(split_name,
                        dataset_dir,
                        batch_size,
+                       stack_depth,
                        file_pattern=None):
     _FILE_PATTERN = '%s*'
 
@@ -24,8 +25,8 @@ def get_images_dataset(split_name,
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
     keys_to_features = {
-        'image/height': tf.FixedLenFeature([], tf.int64),
-        'image/width': tf.FixedLenFeature([], tf.int64),
+        'image/height': tf.FixedLenFeature([], tf.float32),
+        'image/width': tf.FixedLenFeature([], tf.float32),
         'image/colorspace': tf.FixedLenFeature([], tf.string),
         'image/channels': tf.FixedLenFeature([], tf.int64),
         'image/format': tf.FixedLenFeature([], tf.string, default_value='jpeg'),
@@ -61,11 +62,47 @@ def get_images_dataset(split_name,
 
     # Parse TFRecord.
     def parser(serialized):
+        # Decode image.
         parsed = tf.parse_single_example(serialized, keys_to_features)
         image = tf.image.decode_jpeg(parsed['image/encoded'])
-        image = tf.image.resize_image_with_crop_or_pad(image, 64, 64)
+
+        # Resize image.
+        image_height, image_width = parsed['image/height'], parsed[
+            'image/width']
+        image_height = tf.cast(image_height, tf.float32)
+        image_width = tf.cast(image_width, tf.float32)
+        shortest_side = tf.cond(tf.less_equal(image_height, image_width),
+                                true_fn=lambda: image_height,
+                                false_fn=lambda: image_width)
+        shortest_side = tf.cast(shortest_side, tf.int32)
+
+        def get_closest_res():
+            """Use this in order to scale down as little as necessary."""
+            closest_res = 2 ** 6
+            for i in range(stack_depth, 1, -1):
+                curr_res = 2 ** (6 + i)
+                closest_res = tf.cond(
+                    tf.logical_and(
+                        tf.greater_equal(shortest_side, curr_res),
+                        closest_res != 2 ** 6  # closest_res hasn't changed (if already changed, we found a solution) TODO: fix this dirt
+                    ),
+                    true_fn=lambda: curr_res,
+                    false_fn=lambda: closest_res)
+            return closest_res
+
+        closest_res = get_closest_res()
+        scale_ratio = closest_res / shortest_side
+        new_height = scale_ratio * image_height
+        new_height = tf.cast(new_height, tf.int32)
+        new_width = scale_ratio * image_width
+        new_width = tf.cast(new_width, tf.int32)
+        image = tf.image.resize_images(image, size=[new_height, new_width])
+
+        # Crop image to square.
+        image = tf.image.resize_image_with_crop_or_pad(image, closest_res,
+                                                       closest_res)
         image = tf.to_float(image)
-        image.set_shape((64, 64, 3,))
+        image.set_shape((closest_res, closest_res, 3,))
         return image
 
     images_dataset = images_dataset.map(parser)
@@ -135,7 +172,8 @@ def provide_data(batch_size,
     """
     images_dataset = get_images_dataset(split_name,
                                         image_dataset_dir,
-                                        batch_size)
+                                        batch_size,
+                                        stack_depth)
 
     # Get text embedding.
     def parser(embedded_captions):
