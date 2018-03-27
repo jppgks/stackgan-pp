@@ -10,9 +10,6 @@ sys.path.append('models/research')
 # sys.path.append('models/research/gan')
 sys.path.append('models/research/slim')
 
-# TF-Slim data provider.
-from models.research.slim.datasets import dataset_utils
-
 slim = tf.contrib.slim
 
 
@@ -21,11 +18,6 @@ def get_images_dataset(split_name,
                        batch_size,
                        file_pattern=None):
     _FILE_PATTERN = '%s*'
-
-    SPLITS_TO_SIZES = {'train': 5394, 'test': 5794, 'val': 600}
-
-    if split_name not in SPLITS_TO_SIZES:
-        raise ValueError('split name %s was not recognized.' % split_name)
 
     if not file_pattern:
         file_pattern = _FILE_PATTERN
@@ -73,7 +65,6 @@ def get_images_dataset(split_name,
         image = tf.image.decode_jpeg(parsed['image/encoded'])
         image = tf.image.resize_image_with_crop_or_pad(image, 64, 64)
         image = tf.to_float(image)
-        print(image.shape)
         image.set_shape((64, 64, 3,))
         return image
 
