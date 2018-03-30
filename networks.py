@@ -123,6 +123,7 @@ def augment(conditioning, new_dim=128):
 
     :param conditioning: Text embedding
     :param new_dim: 
+        (default of 128 as in StackGAN paper)
     :return: `conditioning`, augmented with additional latent variables, 
         sampled from a Gaussian distribution, with mean and standard deviation 
         as a function of `conditioning`.
@@ -165,8 +166,13 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
                                   [-1, tf.size(conditioning), 1, 1])
         conditioning = tf.tile(conditioning,
                                [1, 1, h_code_final_size, h_code_final_size])
-        noise = tf.concat([conditioning, noise], 1)  # -1
+        conditioning = tf.reshape(conditioning,
+                                  [noise.get_shape()[0],  # batch size
+                                   h_code_final_size,
+                                   h_code_final_size,
+                                   -1])
 
+        noise = tf.concat([conditioning, noise], -1)
         num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
 
     images, end_points = dcgan_generator(
@@ -240,6 +246,7 @@ def dcgan_discriminator(inputs,
                 for i in range(int(log(inp_shape))):
                     scope = 'conv%i' % (i + 1)
                     current_depth = depth * 2 ** i
+                    current_depth = current_depth if current_depth <= 2048 else 2048
                     normalizer_fn_ = None if i == 0 else normalizer_fn
                     net = slim.conv2d(
                         net, current_depth, normalizer_fn=normalizer_fn_,
