@@ -18,11 +18,15 @@ def get_images_dataset(split_name,
                        batch_size,
                        stack_depth,
                        file_pattern=None):
+    # Create tf.data.Dataset
     _FILE_PATTERN = '%s*'
 
     if not file_pattern:
         file_pattern = _FILE_PATTERN
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
+
+    files = tf.data.Dataset.list_files(file_pattern)
+    images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=24)
 
     keys_to_features = {
         'image/height': tf.FixedLenFeature([], tf.int64),
@@ -55,10 +59,6 @@ def get_images_dataset(split_name,
         'image/object/area': tf.VarLenFeature(dtype=tf.float32),
         'image/object/id': tf.VarLenFeature(dtype=tf.string)
     }
-
-    # Create tf.data.Dataset
-    filenames = tf.gfile.Glob(file_pattern)
-    images_dataset = tf.data.TFRecordDataset(filenames)
 
     # Parse TFRecord.
     def parser(serialized):
@@ -102,7 +102,8 @@ def get_images_dataset(split_name,
     images_dataset = images_dataset.map(
         lambda image: (image - 128.0) / 128.0)
     largest_res = 2 ** (6 + stack_depth - 1)
-    images_dataset = images_dataset.padded_batch(batch_size, (largest_res, largest_res, 3,))
+    images_dataset = images_dataset.padded_batch(batch_size,
+                                                 (largest_res, largest_res, 3,))
 
     def _predicate(*xs):
         """Return `True` if this element is a full batch."""
@@ -192,6 +193,8 @@ def provide_data(batch_size,
 
     image_caption_dataset = tf.data.Dataset.zip(
         (images_dataset, embedded_captions_dataset))  # type: tf.data.Dataset
+    image_caption_dataset = image_caption_dataset.apply(
+        tf.contrib.data.prefetch_to_device("/gpu:0"))
     image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
     image, embedded_caption = image_caption_iterator.get_next()
 
