@@ -69,7 +69,6 @@ def main(_):
         tf.gfile.MakeDirs(FLAGS.train_log_dir)
 
     # Get training data.
-    # TODO(joppe): have data provider return text embedding
     images, caption_embedding = data_provider.get_training_data_iterator(
         FLAGS.batch_size,
         FLAGS.image_dataset_dir,
@@ -201,8 +200,8 @@ def _get_generator_input_for_stage(models, stage, noise_sample, conditioning):
 
     def get_input():
         is_init_stage = not bool(stage)
-        # Noise input into first stage is z ~ p_noise.
-        # Noise input for stage i generator is the hidden code outputted by
+        # Input into first stage is z ~ p_noise + conditioning.
+        # Input for stage i generator is the hidden code outputted by
         # stage (i-1) + conditioning.
         noise = noise_sample if is_init_stage else models[
             stage - 1].generator_hidden_code
@@ -227,5 +226,5 @@ def _optimizer(gen_lr, dis_lr):
 
 
 if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.logging.set_verbosity(tf.logging.DEBUG)
     tf.app.run()
