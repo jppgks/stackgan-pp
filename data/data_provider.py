@@ -25,8 +25,8 @@ def get_images_dataset(split_name,
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
     keys_to_features = {
-        'image/height': tf.FixedLenFeature([], tf.float32),
-        'image/width': tf.FixedLenFeature([], tf.float32),
+        'image/height': tf.FixedLenFeature([], tf.int64),
+        'image/width': tf.FixedLenFeature([], tf.int64),
         'image/colorspace': tf.FixedLenFeature([], tf.string),
         'image/channels': tf.FixedLenFeature([], tf.int64),
         'image/format': tf.FixedLenFeature([], tf.string, default_value='jpeg'),
@@ -76,22 +76,14 @@ def get_images_dataset(split_name,
                                 false_fn=lambda: image_width)
         shortest_side = tf.cast(shortest_side, tf.int32)
 
-        def get_closest_res():
+        def get_largest_res():
             """Use this in order to scale down as little as necessary."""
-            closest_res = 2 ** 6
-            for i in range(stack_depth, 1, -1):
-                curr_res = 2 ** (6 + i)
-                closest_res = tf.cond(
-                    tf.logical_and(
-                        tf.greater_equal(shortest_side, curr_res),
-                        closest_res != 2 ** 6  # closest_res hasn't changed (if already changed, we found a solution) TODO: fix this dirt
-                    ),
-                    true_fn=lambda: curr_res,
-                    false_fn=lambda: closest_res)
-            return closest_res
+            largest_res = 2 ** (6 + stack_depth - 1)
+            return largest_res
 
-        closest_res = get_closest_res()
-        scale_ratio = closest_res / shortest_side
+        largest_res = get_largest_res()
+        scale_ratio = largest_res / shortest_side
+        scale_ratio = tf.cast(scale_ratio, tf.float32)
         new_height = scale_ratio * image_height
         new_height = tf.cast(new_height, tf.int32)
         new_width = scale_ratio * image_width
@@ -99,17 +91,18 @@ def get_images_dataset(split_name,
         image = tf.image.resize_images(image, size=[new_height, new_width])
 
         # Crop image to square.
-        image = tf.image.resize_image_with_crop_or_pad(image, closest_res,
-                                                       closest_res)
+        image = tf.image.resize_image_with_crop_or_pad(image, largest_res,
+                                                       largest_res)
         image = tf.to_float(image)
-        image.set_shape((closest_res, closest_res, 3,))
+        image.set_shape((largest_res, largest_res, 3,))
         return image
 
     images_dataset = images_dataset.map(parser)
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
     images_dataset = images_dataset.map(
         lambda image: (image - 128.0) / 128.0)
-    images_dataset = images_dataset.padded_batch(batch_size, (64, 64, 3,))
+    largest_res = 2 ** (6 + stack_depth - 1)
+    images_dataset = images_dataset.padded_batch(batch_size, (largest_res, largest_res, 3,))
 
     def _predicate(*xs):
         """Return `True` if this element is a full batch."""
