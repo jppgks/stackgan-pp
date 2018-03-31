@@ -116,7 +116,6 @@ def get_images_dataset(split_name,
         return tf.equal(batch_size, tensor_batch_size)
 
     images_dataset = images_dataset.filter(_predicate)
-    images_dataset = images_dataset.repeat()
 
     return images_dataset
 
@@ -164,6 +163,8 @@ def provide_data(batch_size,
     Raises:
       ValueError: if the split_name is not either 'train' or 'test'.
     """
+
+    # TODO(joppe): move as much operations as possible from individual datasets to the shared dataset
     images_dataset = get_images_dataset(split_name,
                                         image_dataset_dir,
                                         batch_size,
@@ -172,10 +173,6 @@ def provide_data(batch_size,
     # Get text embedding.
     def parser(embedded_captions):
         import random
-        # index = tf.random_uniform(
-        #     [1],
-        #     minval=0,
-        #     maxval=embedded_captions.get_shape().as_list()[0] - 1)
         index = random.randint(0,
                                embedded_captions.get_shape().as_list()[0] - 1)
         selected_caption = embedded_captions[index, :]
@@ -188,13 +185,13 @@ def provide_data(batch_size,
         embedded_captions)
     embedded_captions_dataset = embedded_captions_dataset.map(parser,
                                                               num_parallel_calls=24)
-    embedded_captions_dataset = embedded_captions_dataset.repeat()
     embedded_captions_dataset = embedded_captions_dataset.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
 
     image_caption_dataset = tf.data.Dataset.zip(
         (images_dataset, embedded_captions_dataset))  # type: tf.data.Dataset
     image_caption_dataset = image_caption_dataset.cache()
+    image_caption_dataset = image_caption_dataset.repeat()
     image_caption_dataset = image_caption_dataset.apply(
         tf.contrib.data.prefetch_to_device("/gpu:0"))
 
