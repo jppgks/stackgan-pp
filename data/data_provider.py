@@ -99,11 +99,11 @@ def get_images_dataset(split_name,
 
     images_dataset = images_dataset.map(parser, num_parallel_calls=24)
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
-    images_dataset = images_dataset.map(
-        lambda image: (image - 128.0) / 128.0)
     largest_res = 2 ** (6 + stack_depth - 1)
     images_dataset = images_dataset.padded_batch(batch_size,
                                                  (largest_res, largest_res, 3,))
+    images_dataset = images_dataset.map(
+        lambda image_batch: (image_batch - 128.0) / 128.0)
 
     def _predicate(*xs):
         """Return `True` if this element is a full batch."""
@@ -117,7 +117,6 @@ def get_images_dataset(split_name,
 
     images_dataset = images_dataset.filter(_predicate)
     images_dataset = images_dataset.repeat()
-    # images_dataset = images_dataset.prefetch(2)
 
     return images_dataset
 
@@ -192,13 +191,12 @@ def provide_data(batch_size,
     embedded_captions_dataset = embedded_captions_dataset.repeat()
     embedded_captions_dataset = embedded_captions_dataset.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
-    # embedded_captions_dataset = embedded_captions_dataset.prefetch(2)
 
     image_caption_dataset = tf.data.Dataset.zip(
         (images_dataset, embedded_captions_dataset))  # type: tf.data.Dataset
+    image_caption_dataset = image_caption_dataset.cache()
     image_caption_dataset = image_caption_dataset.apply(
         tf.contrib.data.prefetch_to_device("/gpu:0"))
-    # image_caption_dataset = image_caption_dataset.prefetch(2)
 
     image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
     image, embedded_caption = image_caption_iterator.get_next()
