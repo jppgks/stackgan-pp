@@ -23,6 +23,9 @@ flags.DEFINE_integer('batch_size', 8,
 flags.DEFINE_integer('noise_dim', 64,  # 100
                      'Dimension of the noise that\'s input for each generator.')
 
+flags.DEFINE_string('loss_fn', 'minimax',
+                    'Type of loss function: \'minimax\' or \'wasserstein\'.')
+
 flags.DEFINE_float('color_loss', 50, 'Weight of color loss (see paper).')
 
 flags.DEFINE_float('uncond_loss_coeff', 1.0, 'Weight of unconditional loss.')
@@ -109,6 +112,13 @@ def main(_):
     # each loss in this list (DiscriminatorTrainOps).
     # Only a need for one overall generator loss, as generator is optimized once
     # per training step in which all discriminator stages are optimized.
+    if FLAGS.loss_fn == 'minimax':
+        discriminator_loss_fn = tfstackgan_losses.minimax_discriminator_loss
+        generator_loss_fn = tfstackgan_losses.minimax_generator_loss
+    else:
+        discriminator_loss_fn = tfstackgan_losses.wasserstein_discriminator_loss
+        generator_loss_fn = tfstackgan_losses.wasserstein_generator_loss
+
     dis_losses = []
     for stage in range(FLAGS.stack_depth):
         with tf.variable_scope(gan_models[stage].discriminator_scope):
@@ -118,7 +128,7 @@ def main(_):
                 with tf.variable_scope('losses'):
                     current_stage_dis_loss = tfstackgan.dis_loss(
                         gan_models[stage],
-                        discriminator_loss_fn=tfstackgan_losses.minimax_discriminator_loss,
+                        discriminator_loss_fn=discriminator_loss_fn,
                         gradient_penalty_weight=FLAGS.gradient_penalty)
                     dis_losses.append(current_stage_dis_loss)
     with tf.variable_scope(gan_models[-1].generator_scope):
@@ -126,7 +136,7 @@ def main(_):
             with tf.variable_scope('loss'):
                 gen_loss_tuple = tfstackgan.gen_loss(
                     gan_models,
-                    generator_loss_fn=tfstackgan_losses.minimax_generator_loss,
+                    generator_loss_fn=generator_loss_fn,
                     color_loss_weight=FLAGS.color_loss,
                     uncond_loss_coeff=FLAGS.uncond_loss_coeff,
                     mu=mu,
@@ -219,9 +229,15 @@ def _get_real_data_for_stage(images, i):
 
 
 def _optimizer(gen_lr, dis_lr):
-    kwargs = {'beta1': 0.5, 'beta2': 0.999}
-    generator_opt = tf.train.AdamOptimizer(gen_lr, **kwargs)
-    discriminator_opt = tf.train.AdamOptimizer(dis_lr, **kwargs)
+    if FLAGS.loss_fn == 'minimax':
+        kwargs = {'beta1': 0.5, 'beta2': 0.999}
+        generator_opt = tf.train.AdamOptimizer(gen_lr, **kwargs)
+        discriminator_opt = tf.train.AdamOptimizer(dis_lr, **kwargs)
+    else:
+        generator_opt = tf.train.RMSPropOptimizer(gen_lr, decay=.9,
+                                                  momentum=0.1)
+        discriminator_opt = tf.train.RMSPropOptimizer(dis_lr, decay=.95,
+                                                      momentum=0.1)
     return generator_opt, discriminator_opt
 
 
