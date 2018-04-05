@@ -72,16 +72,18 @@ def main(_):
         tf.gfile.MakeDirs(FLAGS.train_log_dir)
 
     # Get training data.
-    images, caption_embedding = data_provider.get_training_data_iterator(
+    images, captions_text, captions_embedding = data_provider.get_training_data_iterator(
         FLAGS.batch_size,
         FLAGS.image_dataset_dir,
         FLAGS.text_dataset_dir,
         FLAGS.stack_depth)
+    summary_img_grid_size = 2
+    tf.summary.text('Captions', captions_text[:summary_img_grid_size ** 2])
 
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
-    augmented_conditioning, mu, logvar = networks.augment(caption_embedding)
+    augmented_conditioning, mu, logvar = networks.augment(captions_embedding)
     gan_models = []
     for stage in range(FLAGS.stack_depth):
         kwargs = {
@@ -100,7 +102,7 @@ def main(_):
             networks.discriminator,
             **kwargs)
         gan_models.append(current_model)
-        tfgan.eval.add_gan_model_image_summaries(current_model, grid_size=2)
+        tfgan.eval.add_gan_model_image_summaries(current_model, grid_size=summary_img_grid_size)
     model_names = ['stage_' + str(i) for i in range(FLAGS.stack_depth)]
     GANModels = namedtuple('GANModels', model_names)
     gan_models = GANModels(*gan_models)

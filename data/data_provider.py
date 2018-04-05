@@ -95,6 +95,9 @@ def get_images_dataset(split_name,
                                                        largest_res)
         image = tf.to_float(image)
         image.set_shape((largest_res, largest_res, 3,))
+
+        #  TODO(joppe): resize to all image resolutions needed in training
+
         return image
 
     images_dataset = images_dataset.map(parser, num_parallel_calls=24)
@@ -134,6 +137,89 @@ def load_text_embeddings(text_data_dir):
     return numpy.array(embeddings)
 
 
+def get_text_captions_dataset(text_data_dir):
+    def load_filenames(data_dir):
+        filepath = os.path.join(data_dir, 'filenames.pickle')
+        with tf.gfile.Open(filepath, 'rb') as f:
+            if sys.version_info < (3,):
+                filenames = cPickle.load(f)
+            else:
+                filenames = cPickle.load(f, encoding='bytes')
+        return filenames
+
+    def get_caption_paths():
+        # def load_captions(caption_path):
+        #     with open(caption_path, "r") as f:
+        #         captions = f.read().decode('utf8').split('\n')
+        #     captions = [cap.replace("\ufffd\ufffd", " ")
+        #                 for cap in captions if len(cap) > 0]
+        #     return captions
+
+        filenames = load_filenames(text_data_dir)
+        caption_data_dir = os.path.join(text_data_dir, os.pardir, 'text_c10')
+        paths_to_txt_files = []
+        for key in filenames:
+            caption_path = os.path.join(caption_data_dir, key + '.txt')
+            paths_to_txt_files.append(caption_path)
+
+        return paths_to_txt_files
+
+    # Create tf.data.Dataset
+    file_paths = get_caption_paths()
+    captions_dataset = tf.data.TextLineDataset(file_paths)
+
+    # Collect captions for same img (10 captions / img).
+    captions_dataset = captions_dataset.batch(10)
+
+    return captions_dataset
+
+
+def get_captions_text_with_embedding_dataset(batch_size, text_dataset_dir):
+    embedded_captions = load_text_embeddings(
+        text_dataset_dir)  # (8855, 10, 1024)
+    embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
+        embedded_captions)
+
+    text_captions_dataset = get_text_captions_dataset(text_dataset_dir)
+
+    # Get indices for selecting one caption from 10 given captions per img.
+    num_imgs = 8855
+    num_captions_per_img = 10
+    import random
+    indices_chosen_caption = []
+    for i in range(num_imgs):
+        index = random.randint(0, num_captions_per_img - 1)
+        indices_chosen_caption.append(index)
+
+    # Take one caption text.
+    indices_chosen_caption = iter(indices_chosen_caption)
+    def take_single_text(text_captions):
+        return text_captions[next(indices_chosen_caption)]
+    text_captions_dataset = text_captions_dataset.map(take_single_text,
+                                                      num_parallel_calls=24)
+    text_captions_dataset = text_captions_dataset.cache()
+    text_captions_dataset = text_captions_dataset.repeat()
+    # Batch.
+    text_captions_dataset = text_captions_dataset.apply(
+        tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+    # Take one caption embedding.
+    indices_chosen_caption = iter(indices_chosen_caption)
+    def take_single_emb(embedded_captions):
+        # Select single caption.
+        selected_caption_embedding = embedded_captions[next(
+            indices_chosen_caption), :]
+        selected_caption_embedding.set_shape((1024,))
+        return selected_caption_embedding
+    embedded_captions_dataset = embedded_captions_dataset.map(take_single_emb,
+                                                      num_parallel_calls=24)
+    # Batch.
+    embedded_captions_dataset = embedded_captions_dataset.apply(
+        tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+    return text_captions_dataset, embedded_captions_dataset
+
+
 def provide_data(batch_size,
                  image_dataset_dir='tf_birds_dataset/cub/with_600_val_split/',
                  text_dataset_dir='birds/train/',
@@ -170,35 +256,24 @@ def provide_data(batch_size,
                                         batch_size,
                                         stack_depth)
 
-    # Get text embedding.
-    def parser(embedded_captions):
-        import random
-        index = random.randint(0,
-                               embedded_captions.get_shape().as_list()[0] - 1)
-        selected_caption = embedded_captions[index, :]
-        selected_caption.set_shape((1024,))
-        return selected_caption
-
-    embedded_captions = load_text_embeddings(
-        text_dataset_dir)  # (8855, 10, 1024)
-    embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
-        embedded_captions)
-    embedded_captions_dataset = embedded_captions_dataset.map(parser,
-                                                              num_parallel_calls=24)
-    embedded_captions_dataset = embedded_captions_dataset.apply(
-        tf.contrib.data.batch_and_drop_remainder(batch_size))
+    captions_text_dataset, captions_embedding_dataset = get_captions_text_with_embedding_dataset(
+        batch_size,
+        text_dataset_dir)
 
     image_caption_dataset = tf.data.Dataset.zip(
-        (images_dataset, embedded_captions_dataset))  # type: tf.data.Dataset
+        (images_dataset, captions_embedding_dataset))  # type: tf.data.Dataset
     image_caption_dataset = image_caption_dataset.cache()
     image_caption_dataset = image_caption_dataset.repeat()
     image_caption_dataset = image_caption_dataset.apply(
         tf.contrib.data.prefetch_to_device("/gpu:0"))
 
-    image_caption_iterator = image_caption_dataset.make_one_shot_iterator()
-    image, embedded_caption = image_caption_iterator.get_next()
+    image_embedding_iterator = image_caption_dataset.make_one_shot_iterator()
+    images, captions_embedding = image_embedding_iterator.get_next()
 
-    return image, embedded_caption
+    text_iterator = captions_text_dataset.make_one_shot_iterator()
+    captions_text = text_iterator.get_next()
+
+    return images, captions_text, captions_embedding
 
 
 def get_training_data_iterator(batch_size,
@@ -209,10 +284,10 @@ def get_training_data_iterator(batch_size,
     # for forward and backwards propogation.
     with tf.name_scope('inputs'):
         with tf.device('/cpu:0'):
-            images, caption_embedding = provide_data(
+            images, captions_text, captions_embedding = provide_data(
                 batch_size,
                 image_dataset_dir,
                 text_dataset_dir,
                 stack_depth=stack_depth)
 
-    return images, caption_embedding
+    return images, captions_text, captions_embedding
