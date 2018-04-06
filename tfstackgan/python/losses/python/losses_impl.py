@@ -231,6 +231,7 @@ def minimax_generator_loss(
             loss_collection, reduction)
 
         loss = loss_cond + uncond_loss_coeff * loss_uncond
+        tf.losses.add_loss(loss, loss_collection)
 
         if add_summaries:
             tf.summary.scalar('generator_modified_loss', loss)
