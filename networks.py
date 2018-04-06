@@ -17,7 +17,7 @@ def log(x):
 # setups need the gradient of gradient FusedBatchNormGrad.
 def dcgan_generator(inputs,
                     depth=64,
-                    final_size=32,
+                    final_size=64,
                     num_outputs=3,
                     is_training=True,
                     reuse=None,
@@ -72,7 +72,7 @@ def dcgan_generator(inputs,
                 else:
                     # Next stage.
                     num_layers = int(log(final_size)) - (
-                    int(log(inputs.shape[1])) - 1) - 1
+                        int(log(inputs.shape[1])) - 1) - 1
                     net = inputs
 
                 if num_layers > 1:
@@ -118,32 +118,62 @@ def dcgan_generator(inputs,
                 return logits, end_points
 
 
-def generator(inputs, final_size=32, apply_batch_norm=False):
+def augment(conditioning, new_dim=128):
+    """Increases the number of conditioning variables available for training.
+
+    :param conditioning: Text embedding
+    :param new_dim: 
+        (default of 128 as in StackGAN paper)
+    :return: `conditioning`, augmented with additional latent variables, 
+        sampled from a Gaussian distribution, with mean and standard deviation 
+        as a function of `conditioning`.
+    """
+    # Encode
+    net = slim.fully_connected(conditioning, new_dim * 4, activation_fn=None)
+    split = net.get_shape().as_list()[1]
+    split = int(split / 2)
+    glu = net[:, :split] * tf.sigmoid(net[:, split:])
+    mu = glu[:, :new_dim]
+    logvar = glu[:, new_dim:]
+
+    # Reparametrize
+    std = tf.exp(logvar * 0.5)
+    gauss_sample = tf.random_normal(tf.shape(std))
+    augmented_conditioning = mu + (gauss_sample * std)
+
+    return augmented_conditioning, mu, logvar
+
+
+def generator(inputs, final_size=64, apply_batch_norm=False):
+    # TODO: docstring
     """Generator to produce CIFAR images.
-    Args:
-      noise: A 2D Tensor of shape [batch size, noise dim]. Since this example
-        does not use conditioning, this Tensor represents a noise vector of some
-        kind that will be reshaped by the generator into CIFAR examples.
+    Args: 
+        :param inputs: 3D tuple of (is_init_stage, noise, conditioning) with
+            a) noise as the sample from the noise distribution if is_init_stage,
+            otherwise noise is the hidden code of the previous stage
+            b) conditioning always as the text embedding.
     Returns:
       A single Tensor with a batch of generated CIFAR images.
     """
-    if isinstance(inputs, list):
-        # Next stage.
-        hidden_code, noise = inputs
+    is_init_stage, noise, conditioning = inputs
 
-        h_code_depth = hidden_code.get_shape()[-1]
-        h_code_final_size = hidden_code.get_shape()[
-            1]  # same as hidden_code.get_shape()[2]
-        noise = tf.expand_dims(tf.expand_dims(noise, 1), 1)
-        noise = tf.tile(noise, [1, h_code_final_size, h_code_final_size, 1])
-
-        noise = tf.concat([noise, hidden_code], -1)
-
-        num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
-    else:
-        # Init stage.
-        noise = inputs
+    if is_init_stage:
+        noise = tf.concat([conditioning, noise], 1)  # noise, conditioning -1
         num_layers = int(log(final_size)) - 1
+    else:
+        h_code_final_size = noise.get_shape()[2]
+        conditioning = tf.reshape(conditioning,
+                                  [-1, tf.size(conditioning), 1, 1])
+        conditioning = tf.tile(conditioning,
+                               [1, 1, h_code_final_size, h_code_final_size])
+        conditioning = tf.reshape(conditioning,
+                                  [noise.get_shape()[0],  # batch size
+                                   h_code_final_size,
+                                   h_code_final_size,
+                                   -1])
+
+        noise = tf.concat([conditioning, noise], -1)
+        num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
 
     images, end_points = dcgan_generator(
         noise, final_size=final_size,
@@ -216,6 +246,7 @@ def dcgan_discriminator(inputs,
                 for i in range(int(log(inp_shape))):
                     scope = 'conv%i' % (i + 1)
                     current_depth = depth * 2 ** i
+                    current_depth = current_depth if current_depth <= 2048 else 2048
                     normalizer_fn_ = None if i == 0 else normalizer_fn
                     net = slim.conv2d(
                         net, current_depth, normalizer_fn=normalizer_fn_,
@@ -231,7 +262,14 @@ def dcgan_discriminator(inputs,
                 return logits, end_points
 
 
-def discriminator(img, unused_conditioning, apply_batch_norm=False):
+def _last_conv_layer(end_points):
+    """"Returns the last convolutional layer from an endpoints dictionary."""
+    conv_list = [k if k[:4] == 'conv' else '' for k in end_points.keys()]
+    conv_list.sort()
+    return end_points[conv_list[-1]]
+
+
+def discriminator(img, conditioning, apply_batch_norm=False):
     """Discriminator for CIFAR images.
     Args:
       img: A Tensor of shape [batch size, width, height, channels], that can be
@@ -246,5 +284,36 @@ def discriminator(img, unused_conditioning, apply_batch_norm=False):
       images are real. The output can lie in [-inf, inf], with positive values
       indicating high confidence that the images are real.
     """
-    logits, _ = dcgan_discriminator(img, is_training=apply_batch_norm)
-    return logits
+    depth = 64
+    _, end_points = dcgan_discriminator(img, depth=depth,
+                                        is_training=apply_batch_norm)
+
+    # TODO(joppe): have dcgan_discriminator return the right logits
+    net = _last_conv_layer(end_points)
+    embedding_dim = 128
+    conditioning = tf.reshape(conditioning, [-1, embedding_dim, 1, 1])
+    conditioning = tf.tile(conditioning, [1, 1, 4, 4])
+    batch_size = img.get_shape().as_list()[0]
+    conditioned = tf.concat(
+        [conditioning, tf.reshape(net, [batch_size, embedding_dim, 4, 4])],
+        1)  # -1
+
+    # Block3x3_leakRelu(ndf * 8 + efg, ndf * 8)
+    normalizer_fn_ = slim.batch_norm if apply_batch_norm else None
+    activation_fn_ = tf.nn.leaky_relu
+    conditioned = slim.conv2d(conditioned, depth, kernel_size=3, stride=1,
+                              padding='VALID', normalizer_fn=normalizer_fn_,
+                              activation_fn=activation_fn_)
+
+    # last layer dcgan_discriminator
+    conditioned_logits = slim.conv2d(conditioned, 1, kernel_size=1, stride=1,
+                                     padding='VALID',
+                                     normalizer_fn=None, activation_fn=None)
+    conditioned_logits = tf.reshape(conditioned_logits, [-1, 1])
+
+    unconditoned_logits = slim.conv2d(net, 1, kernel_size=1, stride=1,
+                                      padding='VALID',
+                                      normalizer_fn=None, activation_fn=None)
+    unconditoned_logits = tf.reshape(unconditoned_logits, [-1, 1])
+
+    return conditioned_logits, unconditoned_logits

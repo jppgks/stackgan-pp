@@ -2,9 +2,11 @@ from collections import namedtuple
 
 import tensorflow as tf
 
-import data_provider
 import networks
 import tfstackgan
+
+tfstackgan_losses = tfstackgan.losses
+from data import data_provider
 
 # Useful aliases.
 tfgan = tf.contrib.gan
@@ -21,7 +23,12 @@ flags.DEFINE_integer('batch_size', 8,
 flags.DEFINE_integer('noise_dim', 64,  # 100
                      'Dimension of the noise that\'s input for each generator.')
 
+flags.DEFINE_string('loss_fn', 'minimax',
+                    'Type of loss function: \'minimax\' or \'wasserstein\'.')
+
 flags.DEFINE_float('color_loss', 50, 'Weight of color loss (see paper).')
+
+flags.DEFINE_float('uncond_loss_coeff', 1.0, 'Weight of unconditional loss.')
 
 flags.DEFINE_float('generator_lr', 0.0001, 'Generator learning rate.')
 
@@ -37,7 +44,7 @@ flags.DEFINE_float('decay_rate', 0.9,
 flags.DEFINE_float('discriminator_lr', 0.0001,
                    'Discriminator learning rate.')
 
-flags.DEFINE_float('gradient_penalty', 1, 'Gradient penalty weight.')
+flags.DEFINE_float('gradient_penalty', None, 'Gradient penalty weight.')
 
 flags.DEFINE_boolean('apply_batch_norm', False,
                      'Apply batch normalization.')
@@ -47,10 +54,11 @@ flags.DEFINE_string('train_log_dir', '/tmp/cifar-stackgan-3stage',
                     'continue training from a checkpoint in this directory if '
                     'one exists.')
 
-flags.DEFINE_string('dataset_dir', '/tmp/cifar-data',
-                    'Location of the training data, if it has already been '
-                    'downloaded. Otherwise, the training data will be '
-                    'downloaded to this folder.')
+flags.DEFINE_string('image_dataset_dir', '',
+                    '')  # TODO: docstring
+
+flags.DEFINE_string('text_dataset_dir', '',
+                    '')  # TODO: docstring
 
 flags.DEFINE_integer('max_number_of_steps', 1000000,
                      # num_samples / batch_size * 5 * 120 = 180000
@@ -64,28 +72,37 @@ def main(_):
         tf.gfile.MakeDirs(FLAGS.train_log_dir)
 
     # Get training data.
-    images = data_provider.get_training_data_iterator(FLAGS.batch_size,
-                                                      FLAGS.dataset_dir)
+    images, captions_text, captions_embedding = data_provider.get_training_data_iterator(
+        FLAGS.batch_size,
+        FLAGS.image_dataset_dir,
+        FLAGS.text_dataset_dir,
+        FLAGS.stack_depth)
+    summary_img_grid_size = 2
+    tf.summary.text('Captions', captions_text[:summary_img_grid_size ** 2])
 
     # Define noise node, instantiate GANModel tuples and keep pointer
     # to a named tuple of GAN models.
     noise = tf.random_normal([FLAGS.batch_size, FLAGS.noise_dim])
+    augmented_conditioning, mu, logvar = networks.augment(captions_embedding)
     gan_models = []
-    for i in range(FLAGS.stack_depth):
+    for stage in range(FLAGS.stack_depth):
         kwargs = {
-            'generator_input_fn': _get_generator_input_for_stage(gan_models, i,
-                                                                 noise),
-            'real_data': _get_real_data_for_stage(images, i),
+            'generator_input_fn': _get_generator_input_for_stage(gan_models,
+                                                                 stage,
+                                                                 noise,
+                                                                 augmented_conditioning),
+            'real_data': _get_real_data_for_stage(images, stage),
+            'disc_conditioning': mu,
             'generator_super_scope': gan_models[
-                -1].generator_scope if i > 0 else None,
-            'stage': i,
+                -1].generator_scope if stage > 0 else None,
+            'stage': stage,
             'apply_batch_norm': FLAGS.apply_batch_norm}
         current_model = tfstackgan.gan_model(
             networks.generator,
             networks.discriminator,
             **kwargs)
         gan_models.append(current_model)
-        tfgan.eval.add_gan_model_image_summaries(current_model, grid_size=2)
+        tfgan.eval.add_gan_model_image_summaries(current_model, grid_size=summary_img_grid_size)
     model_names = ['stage_' + str(i) for i in range(FLAGS.stack_depth)]
     GANModels = namedtuple('GANModels', model_names)
     gan_models = GANModels(*gan_models)
@@ -97,16 +114,23 @@ def main(_):
     # each loss in this list (DiscriminatorTrainOps).
     # Only a need for one overall generator loss, as generator is optimized once
     # per training step in which all discriminator stages are optimized.
+    if FLAGS.loss_fn == 'minimax':
+        discriminator_loss_fn = tfstackgan_losses.minimax_discriminator_loss
+        generator_loss_fn = tfstackgan_losses.minimax_generator_loss
+    else:
+        discriminator_loss_fn = tfstackgan_losses.wasserstein_discriminator_loss
+        generator_loss_fn = tfstackgan_losses.wasserstein_generator_loss
+
     dis_losses = []
-    for i in range(FLAGS.stack_depth):
-        with tf.variable_scope(gan_models[i].discriminator_scope):
+    for stage in range(FLAGS.stack_depth):
+        with tf.variable_scope(gan_models[stage].discriminator_scope):
             with tf.name_scope(
-                    gan_models[i].discriminator_scope.original_name_scope):
+                    gan_models[stage].discriminator_scope.original_name_scope):
                 print(tf.get_variable_scope().name)
                 with tf.variable_scope('losses'):
                     current_stage_dis_loss = tfstackgan.dis_loss(
-                        gan_models[i],
-                        discriminator_loss_fn=tfgan.losses.wasserstein_discriminator_loss,
+                        gan_models[stage],
+                        discriminator_loss_fn=discriminator_loss_fn,
                         gradient_penalty_weight=FLAGS.gradient_penalty)
                     dis_losses.append(current_stage_dis_loss)
     with tf.variable_scope(gan_models[-1].generator_scope):
@@ -114,8 +138,11 @@ def main(_):
             with tf.variable_scope('loss'):
                 gen_loss_tuple = tfstackgan.gen_loss(
                     gan_models,
-                    generator_loss_fn=tfgan.losses.wasserstein_generator_loss,
-                    color_loss_weight=FLAGS.color_loss)
+                    generator_loss_fn=generator_loss_fn,
+                    color_loss_weight=FLAGS.color_loss,
+                    uncond_loss_coeff=FLAGS.uncond_loss_coeff,
+                    mu=mu,
+                    logvar=logvar, )
 
     # Instantiate train ops.
     # Generator's learning rate decays, while discriminator's stays constant.
@@ -180,20 +207,23 @@ def main(_):
     )
 
 
-def _get_generator_input_for_stage(models, i, noise):
-    assert isinstance(i, int)
+def _get_generator_input_for_stage(models, stage, noise_sample, conditioning):
+    assert isinstance(stage, int)
 
     def get_input():
-        # Input into first stage is z ~ p_noise. Input for stage i generator
-        # is the hidden code outputted by stage (i-1) + conditioning (just
-        # noise for image generation task).
-        return [models[i - 1].generator_hidden_code, noise] if i else noise
+        is_init_stage = not bool(stage)
+        # Input into first stage is z ~ p_noise + conditioning.
+        # Input for stage i generator is the hidden code outputted by
+        # stage (i-1) + conditioning.
+        noise = noise_sample if is_init_stage else models[
+            stage - 1].generator_hidden_code
+        return is_init_stage, noise, conditioning
 
     return get_input
 
 
 def _get_real_data_for_stage(images, i):
-    resolution = 2 ** (5 + i)
+    resolution = 2 ** (6 + i)
     current_res_images = tf.image.resize_images(images,
                                                 size=[resolution, resolution])
     current_res_images.set_shape([FLAGS.batch_size, resolution, resolution, 3])
@@ -201,12 +231,18 @@ def _get_real_data_for_stage(images, i):
 
 
 def _optimizer(gen_lr, dis_lr):
-    kwargs = {'beta1': 0.5, 'beta2': 0.999}
-    generator_opt = tf.train.AdamOptimizer(gen_lr, **kwargs)
-    discriminator_opt = tf.train.AdamOptimizer(dis_lr, **kwargs)
+    if FLAGS.loss_fn == 'minimax':
+        kwargs = {'beta1': 0.5, 'beta2': 0.999}
+        generator_opt = tf.train.AdamOptimizer(gen_lr, **kwargs)
+        discriminator_opt = tf.train.AdamOptimizer(dis_lr, **kwargs)
+    else:
+        generator_opt = tf.train.RMSPropOptimizer(gen_lr, decay=.9,
+                                                  momentum=0.1)
+        discriminator_opt = tf.train.RMSPropOptimizer(dis_lr, decay=.95,
+                                                      momentum=0.1)
     return generator_opt, discriminator_opt
 
 
 if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.logging.set_verbosity(tf.logging.DEBUG)
     tf.app.run()

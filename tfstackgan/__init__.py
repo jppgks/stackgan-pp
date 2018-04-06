@@ -7,7 +7,7 @@ from tfstackgan.python import train
 from tfstackgan.python.namedtuples import *
 from tfstackgan.python.train import *
 
-_allowed_symbols = []
+_allowed_symbols = ['losses', ]
 _allowed_symbols += train.__all__
 _allowed_symbols += namedtuples.__all__
 remove_undocumented(__name__, _allowed_symbols)
