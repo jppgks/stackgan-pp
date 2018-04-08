@@ -301,8 +301,12 @@ def minimax_discriminator_loss(
     return loss
 
 
-def kl_loss(mu, logvar):
+def kl_loss(mu, logvar, add_summaries=False):
     # -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     kld = 1 + logvar - (mu ** 2) - tf.exp(logvar)
     kld = tf.reduce_mean(kld) * -0.5
+
+    if add_summaries:
+        tf.summary.scalar('kl_divergence', kld)
+
     return kld

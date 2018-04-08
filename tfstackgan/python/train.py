@@ -1,6 +1,7 @@
 from contextlib import ExitStack
 
 import tensorflow as tf
+from tensorflow.contrib.distribute import MirroredStrategy
 from tensorflow.contrib.gan.python.train import _convert_tensor_or_l_or_d, \
     _use_aux_loss, _validate_aux_loss_weight, RunTrainOpsHook
 from tensorflow.contrib.training.python.training import training
@@ -18,6 +19,7 @@ __all__ = [
     'gen_loss',
     'generator_train_op',
     'discriminator_train_ops',
+    'gan_train_ops',
     'get_sequential_train_hooks',
 ]
 
@@ -34,48 +36,52 @@ def gan_model(  # Lambdas defining models.
         generator_fn,
         discriminator_fn,
         # Real data and discriminator conditioning.
-        real_data,
-        disc_conditioning,
-        generator_input_fn,
+        discriminator_inputs,
+        generator_inputs,
         # Stage (depth in stack).
         stage,
         generator_super_scope=None,
+        # Loss specific
+        mu=None,
+        logvar=None,
         # Options.
         check_shapes=True,
-        apply_batch_norm=False):
+        apply_batch_norm=False, ):
     current_stage_generator_scope = 'Generator_stage_' + str(stage)
     current_stage_discriminator_scope = 'Discriminator_stage_' + str(stage)
 
     # Wrap generator in super scope.
     generator_super_scope = _get_or_create_gen_super_scope(
         generator_super_scope)
-    with tf.variable_scope(generator_super_scope):
-        with tf.name_scope(generator_super_scope.original_name_scope):
-            with tf.variable_scope(
-                    current_stage_generator_scope,
-                    reuse=tf.AUTO_REUSE) as current_gen_scope:
-                print(tf.get_variable_scope().name)
-                # Nested scope, specific to this generator stage.
-                is_init_stage, noise, conditioning = generator_input_fn()
-                generator_inputs = _convert_tensor_or_l_or_d(
-                    (noise, conditioning))
-                generator_inputs = [is_init_stage] + generator_inputs
-                kwargs = {'final_size': 2 ** (6 + stage),
-                          'apply_batch_norm': apply_batch_norm}
-                generated_data, generator_hidden_code = generator_fn(
-                    generator_inputs, **kwargs)
+    with tf.variable_scope(generator_super_scope), \
+         tf.name_scope(generator_super_scope.original_name_scope), \
+         tf.variable_scope(current_stage_generator_scope,
+                           reuse=tf.AUTO_REUSE) as current_gen_scope:
+        print(tf.get_variable_scope().name)
+        # Nested scope, specific to this generator stage.
+        if callable(generator_inputs):
+            generator_inputs = generator_inputs()
+        is_init_stage, noise, conditioning = generator_inputs
+        generator_inputs = _convert_tensor_or_l_or_d(
+            (noise, conditioning))
+        generator_inputs = [is_init_stage] + generator_inputs
+        kwargs = {'final_size': 2 ** (6 + stage),
+                  'apply_batch_norm': apply_batch_norm}
+        generated_data, generator_hidden_code = generator_fn(
+            generator_inputs, **kwargs)
 
     # Discriminate generated and real data.
+    real_data, disc_conditioning = discriminator_inputs
     with tf.variable_scope(current_stage_discriminator_scope,
                            reuse=tf.AUTO_REUSE) as dis_scope:
         discriminator_gen_outputs, disc_gen_outputs_uncond = discriminator_fn(
             generated_data, disc_conditioning,
             apply_batch_norm=apply_batch_norm)
-    with tf.variable_scope(dis_scope):
-        with tf.name_scope(dis_scope.original_name_scope):
-            real_data = tf.convert_to_tensor(real_data)
-            discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
-                real_data, disc_conditioning, apply_batch_norm=apply_batch_norm)
+    with tf.variable_scope(dis_scope), \
+         tf.name_scope(dis_scope.original_name_scope):
+        real_data = tf.convert_to_tensor(real_data)
+        discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
+            real_data, disc_conditioning, apply_batch_norm=apply_batch_norm)
 
     if check_shapes:
         if not generated_data.shape.is_compatible_with(real_data.shape):
@@ -102,7 +108,9 @@ def gan_model(  # Lambdas defining models.
         generator_hidden_code,
         stage,
         disc_real_outputs_uncond,
-        disc_gen_outputs_uncond)
+        disc_gen_outputs_uncond,
+        mu,
+        logvar)
 
 
 def _tensor_pool_adjusted_model(model,
@@ -158,7 +166,7 @@ def _tensor_pool_adjusted_model(model,
 
 def dis_loss(
         model,
-        discriminator_loss_fn=tfstackgan_losses.wasserstein_discriminator_loss,
+        discriminator_loss_fn=tfstackgan_losses.minimax_discriminator_loss,
         # Auxiliary losses.
         gradient_penalty_weight=None,
         gradient_penalty_epsilon=1e-10,
@@ -268,7 +276,7 @@ def dis_loss(
 
 def gen_loss(
         models,
-        generator_loss_fn=tfstackgan_losses.wasserstein_generator_loss,
+        generator_loss_fn=tfstackgan_losses.minimax_generator_loss,
         # Auxiliary losses.
         mutual_information_penalty_weight=None,
         aux_cond_generator_weight=None,
@@ -354,7 +362,8 @@ def gen_loss(
                 gen_loss += aux_cond_generator_weight * ac_gen_loss
 
     if mu is not None and logvar is not None:
-        gen_loss += kl_loss_coeff * tfstackgan_losses.kl_loss(mu, logvar)
+        gen_loss += kl_loss_coeff * tfstackgan_losses.kl_loss(
+            mu, logvar, add_summaries=add_summaries)
 
     # Gathers auxiliary losses.
     if model.generator_scope:
@@ -459,7 +468,7 @@ def generator_train_op(
     #  gen_update_ops += [generator_global_step.assign(global_step)]
     with tf.name_scope('generator_train'):
         gen_train_op = training.create_train_op(
-            total_loss=loss.generator_loss,
+            total_loss=loss,
             optimizer=optimizer,
             variables_to_train=model.generator_variables,
             global_step=generator_global_step,
@@ -502,7 +511,7 @@ def discriminator_train_ops(
     for i in range(stack_depth):
         with tf.name_scope('discriminator_train'):
             current_disc_train_op = training.create_train_op(
-                total_loss=losses[i].discriminator_loss,
+                total_loss=losses[i],
                 optimizer=optimizer,
                 variables_to_train=models[i].discriminator_variables,
                 global_step=discriminator_global_step,
@@ -511,6 +520,29 @@ def discriminator_train_ops(
         disc_train_ops.append(current_disc_train_op)
 
     return tfstackgan.DiscriminatorTrainOps(disc_train_ops)
+
+
+def gan_train_ops(gan_models, gan_loss, gen_opt, dis_opt):
+    gen_train_op = tfstackgan.generator_train_op(
+        gan_models[-1],
+        gan_loss.generator_loss,
+        gen_opt,
+        summarize_gradients=False,
+        colocate_gradients_with_ops=True,
+        aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
+    disc_train_ops = tfstackgan.discriminator_train_ops(
+        gan_models,
+        gan_loss.discriminator_loss,
+        dis_opt,
+        summarize_gradients=False,
+        colocate_gradients_with_ops=True,
+        aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N,
+        # transform_grads_fn=tf.contrib.training.clip_gradient_norms_fn(1e3)
+    )
+
+    dummy_op = tf.constant(True, dtype=tf.bool)
+
+    return tfgan.GANTrainOps(gen_train_op, disc_train_ops, dummy_op)
 
 
 def get_sequential_train_hooks(train_steps=tfgan.GANTrainSteps(1, 1)):

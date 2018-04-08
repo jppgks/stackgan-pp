@@ -24,7 +24,10 @@ class StackGANModel(
             'generator_hidden_code',
             'stage',
             'disc_real_outputs_uncond',
-            'disc_gen_outputs_uncond',))):
+            'disc_gen_outputs_uncond',
+            # Loss specific
+            'mu',
+            'logvar',))):
     '''Modified GANModel namedtuple for StackGAN architecture.
   
     Represents a (generator, discriminator) pair at one particular stage.
@@ -38,7 +41,7 @@ class StackGANModel(
 
 # Maybe customize gan_loss to only compute stage i discriminator loss
 # => dis_loss tuple?
-# Then define seperate gen_loss tuple that will be used to optimize the whole
+# Then define separate gen_loss tuple that will be used to optimize the whole
 # generator net.
 class DiscriminatorLoss(
     namedtuple('DiscriminatorLoss', tuple(field
@@ -51,7 +54,7 @@ class DiscriminatorLoss(
 class GeneratorLoss(
     namedtuple('GeneratorLoss', tuple(field
                                       for field
-                                      in tfgan.GANLoss._fields
+                                      in tfgan.GANLoss._fields  # (generator_loss, discriminator_loss)
                                       if field != 'discriminator_loss'))):
     pass
 

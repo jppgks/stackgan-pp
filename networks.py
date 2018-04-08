@@ -275,10 +275,8 @@ def discriminator(img, conditioning, apply_batch_norm=False):
       img: A Tensor of shape [batch size, width, height, channels], that can be
         either real or generated. It is the discriminator's goal to distinguish
         between the two.
-      unused_conditioning: The TFGAN API can help with conditional GANs, which
-        would require extra `condition` information to both the generator and the
-        discriminator. Since this example is not conditional, we do not use this
-        argument.
+      conditioning: `mu` output of networks.augment for the text embeddings of 
+        the images in the given `img` batch.
     Returns:
       A 1D Tensor of shape [batch size] representing the confidence that the
       images are real. The output can lie in [-inf, inf], with positive values
