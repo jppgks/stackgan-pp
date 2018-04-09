@@ -248,22 +248,23 @@ def dis_loss(
         add_summaries=add_summaries)
 
     # Add optional extra losses.
-    if _use_aux_loss(gradient_penalty_weight):
-        gp_loss = tfgan_losses.wasserstein_gradient_penalty(
-            model, epsilon=gradient_penalty_epsilon,
-            add_summaries=add_summaries)
-        dis_loss += gradient_penalty_weight * gp_loss
-    if _use_aux_loss(mutual_information_penalty_weight):
-        info_loss = tfgan_losses.mutual_information_penalty(
-            model, add_summaries=add_summaries)
-        dis_loss += mutual_information_penalty_weight * info_loss
-    if _use_aux_loss(aux_cond_generator_weight):
-        ac_gen_loss = tfgan_losses.acgan_generator_loss(
-            model, add_summaries=add_summaries)
-    if _use_aux_loss(aux_cond_discriminator_weight):
-        ac_disc_loss = tfgan_losses.acgan_discriminator_loss(
-            model, add_summaries=add_summaries)
-        dis_loss += aux_cond_discriminator_weight * ac_disc_loss
+    with tf.device('/cpu:0'):
+        if _use_aux_loss(gradient_penalty_weight):
+            gp_loss = tfgan_losses.wasserstein_gradient_penalty(
+                model, epsilon=gradient_penalty_epsilon,
+                add_summaries=add_summaries)
+            dis_loss += gradient_penalty_weight * gp_loss
+        if _use_aux_loss(mutual_information_penalty_weight):
+            info_loss = tfgan_losses.mutual_information_penalty(
+                model, add_summaries=add_summaries)
+            dis_loss += mutual_information_penalty_weight * info_loss
+        if _use_aux_loss(aux_cond_generator_weight):
+            ac_gen_loss = tfgan_losses.acgan_generator_loss(
+                model, add_summaries=add_summaries)
+        if _use_aux_loss(aux_cond_discriminator_weight):
+            ac_disc_loss = tfgan_losses.acgan_discriminator_loss(
+                model, add_summaries=add_summaries)
+            dis_loss += aux_cond_discriminator_weight * ac_disc_loss
     # Gathers auxiliary losses.
     if model.discriminator_scope:
         dis_reg_loss = tf.losses.get_regularization_loss(
@@ -530,7 +531,7 @@ def gan_train_ops(gan_models, gan_loss, gen_opt, dis_opt):
         gan_models[-1],
         gan_loss.generator_loss,
         gen_opt,
-        summarize_gradients=False,
+        summarize_gradients=False,  # op was put on GPU, where string type not supported --> no summaries
         colocate_gradients_with_ops=True,
         aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
     disc_train_ops = tfstackgan.discriminator_train_ops(

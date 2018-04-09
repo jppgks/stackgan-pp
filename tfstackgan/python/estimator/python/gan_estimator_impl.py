@@ -350,11 +350,12 @@ def _make_gan_models(stack_depth, batch_size, noise_dim, generator_fn,
         gan_models.append(current_model)
 
         if add_summaries:
-            if not isinstance(add_summaries, (tuple, list)):
-                add_summaries = [add_summaries]
-            with ops.name_scope(None):
-                for summary_type in add_summaries:
-                    _summary_type_map[summary_type](current_model)
+            with ops.device('/cpu:0'):
+                if not isinstance(add_summaries, (tuple, list)):
+                    add_summaries = [add_summaries]
+                with ops.name_scope(None):
+                    for summary_type in add_summaries:
+                        _summary_type_map[summary_type](current_model)
 
     return gan_models
 
