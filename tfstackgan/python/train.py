@@ -451,27 +451,30 @@ def generator_train_op(
         kwargs, model.generator_scope.name,
         check_for_unused_update_ops)
 
-    generator_global_step = None
+    # Create global step increment op.
+    global_step = tf.train.get_or_create_global_step()
+    # global_step_inc = global_step.assign_add(1)
+
     # if isinstance(generator_optimizer,
     #              sync_replicas_optimizer.SyncReplicasOptimizer):
     # TODO(joelshor): Figure out a way to get this work without including the
     # dummy global step in the checkpoint.
     # WARNING: Making this variable a local variable causes sync replicas to
     # hang forever.
-    #  generator_global_step = variable_scope.get_variable(
-    #      'dummy_global_step_generator',
-    #      shape=[],
-    #      dtype=global_step.dtype.base_dtype,
-    #      initializer=init_ops.zeros_initializer(),
-    #      trainable=False,
-    #      collections=[ops.GraphKeys.GLOBAL_VARIABLES])
-    #  gen_update_ops += [generator_global_step.assign(global_step)]
+    # generator_global_step = tf.get_variable(
+    #  'dummy_global_step_generator',
+    #  shape=[],
+    #  dtype=global_step.dtype.base_dtype,
+    #  initializer=init_ops.zeros_initializer(),
+    #  trainable=False,
+    #  collections=[ops.GraphKeys.GLOBAL_VARIABLES])
+    # gen_update_ops += [global_step_inc]
     with tf.name_scope('generator_train'):
         gen_train_op = training.create_train_op(
             total_loss=loss,
             optimizer=optimizer,
             variables_to_train=model.generator_variables,
-            global_step=generator_global_step,
+            global_step=global_step,
             update_ops=gen_update_ops,
             **kwargs)
 

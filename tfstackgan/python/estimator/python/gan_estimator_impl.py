@@ -37,7 +37,7 @@ from tensorflow.contrib.gan.python.train import _convert_tensor_or_l_or_d
 from tensorflow.python.estimator import estimator
 from tensorflow.python.estimator import model_fn as model_fn_lib
 from tensorflow.python.framework import ops
-from tensorflow.python.ops import variable_scope, random_ops
+from tensorflow.python.ops import variable_scope, random_ops, state_ops
 from tensorflow.python.util import tf_inspect as inspect
 
 from tensorflow.python.estimator import model_fn as model_fn_lib
@@ -179,6 +179,12 @@ class StackGANEstimator(estimator.Estimator):
 
         # TODO(joelshor): Explicitly validate inputs.
 
+        # gopt = (generator_optimizer() if callable(generator_optimizer) else
+        #         generator_optimizer)
+        # dopt = (
+        #     discriminator_optimizer() if callable(discriminator_optimizer)
+        #     else discriminator_optimizer)
+
         def _model_fn(features, labels, mode):
             gopt = (generator_optimizer() if callable(generator_optimizer) else
                     generator_optimizer)
@@ -189,53 +195,15 @@ class StackGANEstimator(estimator.Estimator):
                 generator_loss_fn, discriminator_loss_fn, gopt, dopt,
                 uncond_loss_coeff, color_loss_weight, gradient_penalty_weight,
                 use_loss_summaries, get_hooks_fn=get_hooks_fn)
+
             return _gan_model_fn(
                 stack_depth, batch_size, noise_dim, features, labels, mode,
-                generator_fn,
-                discriminator_fn, gan_head, add_summaries,
+                generator_fn, discriminator_fn, gan_head,
+                add_summaries,
                 apply_batch_norm=apply_batch_norm)
 
         super(StackGANEstimator, self).__init__(
             model_fn=_model_fn, model_dir=model_dir, config=config)
-
-        # # Debug hooks TODO: remove
-        # self._distribution.configure(self._session_config)
-        # worker_hooks = []
-        # with ops.Graph().as_default() as g:
-        #     with self._distribution.scope():
-        #         random_seed.set_random_seed(self._config.tf_random_seed)
-        #         features, labels, input_hooks = (
-        #             self._get_features_and_labels_from_input_fn(
-        #                 input_fn, model_fn_lib.ModeKeys.TRAIN))
-        #         worker_hooks.extend(input_hooks)
-        #         global_step_tensor = self._create_and_assert_global_step(g)
-        #         # The default destination for the global_step_tensor fetch call is the
-        #         # CPU.
-        #         global_step_read_tensor = self._distribution.fetch(
-        #             global_step_tensor)
-        #         # we want to add to the global collection in the main thread not the
-        #         # tower threads.
-        #         ops.add_to_collection(training_util.GLOBAL_STEP_READ_KEY,
-        #                               global_step_read_tensor)
-        #         grouped_estimator_spec = self._distribution.call_for_each_tower(
-        #             self._call_model_fn,
-        #             features,
-        #             labels,  # although this will be None it seems
-        #             model_fn_lib.ModeKeys.TRAIN,
-        #             self.config)
-        #
-        # def get_hooks_from_the_first_device(per_device_hooks):
-        #     hooks_list = self._distribution.unwrap(per_device_hooks)
-        #     assert hooks_list
-        #     print('hooks_list instance of PerDevice? ' + str(
-        #         isinstance(hooks_list, values.PerDevice)))
-        #     fully_unwrapped = self._distribution.unwrap(hooks_list[0])
-        #     return fully_unwrapped
-        #
-        # training_hooks = get_hooks_from_the_first_device(
-        #     grouped_estimator_spec.training_hooks)
-        #
-        # print('Training hooks: ' + str(training_hooks))
 
 
 def _gan_model_fn(

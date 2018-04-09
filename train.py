@@ -92,13 +92,12 @@ def main(_):
     distribution = tf.contrib.distribute.MirroredStrategy(
         devices=["/device:CPU:0", "/device:GPU:0"]
     )
-    # distribution = tf.contrib.distribute.OneDeviceStrategy("/device:GPU:0")
 
     # - Estimator config
     run_config = tf.estimator.RunConfig(
         distribute=distribution,
         session_config=sess_config,
-        save_summary_steps=100,
+        save_summary_steps=1,
         log_step_count_steps=1)
 
     # ???
@@ -164,10 +163,12 @@ def _get_dis_opt_fn(dis_lr):
     def dis_opt_fn():
         if FLAGS.loss_fn == 'minimax':
             kwargs = {'beta1': 0.5, 'beta2': 0.999}
-            discriminator_opt = tf.train.AdamOptimizer(dis_lr, **kwargs)
+            discriminator_opt = tf.contrib.optimizer_v2.AdamOptimizer(dis_lr,
+                                                                      **kwargs)
         else:
-            discriminator_opt = tf.train.RMSPropOptimizer(dis_lr, decay=.95,
-                                                          momentum=0.1)
+            discriminator_opt = tf.contrib.optimizer_v2.RMSPropOptimizer(dis_lr,
+                                                                         decay=.95,
+                                                                         momentum=0.1)
         return discriminator_opt
 
     return dis_opt_fn
@@ -191,10 +192,12 @@ def _get_gen_opt_fn(gen_lr, do_lr_decay, decay_steps, decay_rate):
 
         if FLAGS.loss_fn == 'minimax':
             kwargs = {'beta1': 0.5, 'beta2': 0.999}
-            generator_opt = tf.train.AdamOptimizer(generator_lr, **kwargs)
+            generator_opt = tf.contrib.optimizer_v2.AdamOptimizer(generator_lr,
+                                                                  **kwargs)
         else:
-            generator_opt = tf.train.RMSPropOptimizer(generator_lr, decay=.9,
-                                                      momentum=0.1)
+            generator_opt = tf.contrib.optimizer_v2.RMSPropOptimizer(
+                generator_lr, decay=.9,
+                momentum=0.1)
         return generator_opt
 
     return gen_opt_fn
