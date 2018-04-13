@@ -119,7 +119,8 @@ def wasserstein_generator_loss(
         loss = cond_loss + uncond_loss
 
         if add_summaries:
-            tf.summary.scalar('generator_wass_loss', loss)
+            with tf.device('/cpu:0'):
+                tf.summary.scalar('generator_wass_loss', loss)
 
     return loss
 
@@ -199,10 +200,11 @@ def wasserstein_discriminator_loss(
         tf.losses.add_loss(loss, loss_collection)
 
         if add_summaries:
-            tf.summary.scalar('discriminator_gen_wass_loss',
-                              loss_on_generated_cond)
-            tf.summary.scalar('discriminator_real_wass_loss', loss_on_real_cond)
-            tf.summary.scalar('discriminator_wass_loss', loss)
+            with tf.device('/cpu:0'):
+                tf.summary.scalar('discriminator_gen_wass_loss',
+                                  loss_on_generated_cond)
+                tf.summary.scalar('discriminator_real_wass_loss', loss_on_real_cond)
+                tf.summary.scalar('discriminator_wass_loss', loss)
 
     return loss
 
@@ -234,7 +236,8 @@ def minimax_generator_loss(
         tf.losses.add_loss(loss, loss_collection)
 
         if add_summaries:
-            tf.summary.scalar('generator_modified_loss', loss)
+            with tf.device('/cpu:0'):
+                tf.summary.scalar('generator_modified_loss', loss)
 
     return loss
 
@@ -294,15 +297,21 @@ def minimax_discriminator_loss(
         tf.losses.add_loss(loss, loss_collection)
 
         if add_summaries:
-            # tf.summary.scalar('discriminator_gen_minimax_loss', loss_on_generated)
-            # tf.summary.scalar('discriminator_real_minimax_loss', loss_on_real)
-            tf.summary.scalar('discriminator_minimax_loss', loss)
+            with tf.device('/cpu:0'):
+                # tf.summary.scalar('discriminator_gen_minimax_loss', loss_on_generated)
+                # tf.summary.scalar('discriminator_real_minimax_loss', loss_on_real)
+                tf.summary.scalar('discriminator_minimax_loss', loss)
 
     return loss
 
 
-def kl_loss(mu, logvar):
+def kl_loss(mu, logvar, add_summaries=False):
     # -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     kld = 1 + logvar - (mu ** 2) - tf.exp(logvar)
     kld = tf.reduce_mean(kld) * -0.5
+
+    if add_summaries:
+        with tf.device('/cpu:0'):
+            tf.summary.scalar('kl_divergence', kld)
+
     return kld

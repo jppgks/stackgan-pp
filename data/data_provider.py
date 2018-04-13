@@ -6,6 +6,8 @@ import numpy
 import tensorflow as tf
 from six.moves import cPickle
 
+import networks
+
 sys.path.append('models/research')
 # sys.path.append('models/research/gan')
 sys.path.append('models/research/slim')
@@ -13,11 +15,11 @@ sys.path.append('models/research/slim')
 slim = tf.contrib.slim
 
 
-def get_images_dataset(split_name,
-                       dataset_dir,
-                       batch_size,
-                       stack_depth,
-                       file_pattern=None):
+def get_image_dataset(split_name,
+                      dataset_dir,
+                      batch_size,
+                      stack_depth,
+                      file_pattern=None):
     # Create tf.data.Dataset
     _FILE_PATTERN = '%s*'
 
@@ -25,8 +27,8 @@ def get_images_dataset(split_name,
         file_pattern = _FILE_PATTERN
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
-    files = tf.data.Dataset.list_files(file_pattern)
-    images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=24)
+    files = tf.data.Dataset.list_files(file_pattern, shuffle=False)
+    images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=12)
 
     keys_to_features = {
         'image/height': tf.FixedLenFeature([], tf.int64),
@@ -96,29 +98,47 @@ def get_images_dataset(split_name,
         image = tf.to_float(image)
         image.set_shape((largest_res, largest_res, 3,))
 
-        #  TODO(joppe): resize to all image resolutions needed in training
+        # Resize to all image resolutions needed in training.
+        def _get_real_data_for_stage(image, i):
+            resolution = 2 ** (6 + i)
+            current_res_image = tf.image.resize_images(image,
+                                                       size=[resolution,
+                                                             resolution])
+            current_res_image.set_shape((resolution, resolution, 3))
+            return current_res_image
 
-        return image
+        all_stage_real_imgs = []
+        for stage in range(stack_depth):
+            current_stage_real_img = _get_real_data_for_stage(image, stage)
+            resolution = 2 ** (6 + stage)
+            current_stage_real_img.set_shape((resolution, resolution, 3,))
+            all_stage_real_imgs.append(current_stage_real_img)
 
-    images_dataset = images_dataset.map(parser, num_parallel_calls=24)
+        return all_stage_real_imgs
+
+    # Parse.
+    images_dataset = images_dataset.map(parser, num_parallel_calls=12)
+
+    shapes = []
+    for stage in range(stack_depth):
+        resolution = 2 ** (6 + stage)
+        shapes.append((resolution, resolution, 3))
+    # if stack_depth == 1:
+    #     shapes = shapes[0]  # flatten shapes, bc dataset input is no sequence
+
+    print(images_dataset)
+    print(tuple(shapes))
+
+    # TODO: try `shapes = tuple(shapes)` for multi stage support
+
+    images_dataset = images_dataset.apply(
+        tf.contrib.data.padded_batch_and_drop_remainder(batch_size,
+                                                        tuple(shapes)))
+
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
-    largest_res = 2 ** (6 + stack_depth - 1)
-    images_dataset = images_dataset.padded_batch(batch_size,
-                                                 (largest_res, largest_res, 3,))
     images_dataset = images_dataset.map(
-        lambda image_batch: (image_batch - 128.0) / 128.0)
-
-    def _predicate(*xs):
-        """Return `True` if this element is a full batch."""
-        # Extract the dynamic batch size from the first component of the flattened
-        # batched element.
-        first_component = xs[0]
-        tensor_batch_size = tf.shape(
-            first_component, out_type=tf.int32)[0]
-
-        return tf.equal(batch_size, tensor_batch_size)
-
-    images_dataset = images_dataset.filter(_predicate)
+        lambda image_batch: (image_batch - 128.0) / 128.0,
+        num_parallel_calls=12)
 
     return images_dataset
 
@@ -174,13 +194,15 @@ def get_text_captions_dataset(text_data_dir):
     return captions_dataset
 
 
-def get_captions_text_with_embedding_dataset(batch_size, text_dataset_dir):
+def get_captions_txt_and_emb(batch_size,
+                             text_dataset_dir):
+    # Load captions
     embedded_captions = load_text_embeddings(
         text_dataset_dir)  # (8855, 10, 1024)
-    embedded_captions_dataset = tf.data.Dataset.from_tensor_slices(
-        embedded_captions)
+    # Create dataset
+    emb_captions_ds = tf.data.Dataset.from_tensor_slices(embedded_captions)
 
-    text_captions_dataset = get_text_captions_dataset(text_dataset_dir)
+    txt_captions_ds = get_text_captions_dataset(text_dataset_dir)
 
     # Get indices for selecting one caption from 10 given captions per img.
     num_imgs = 8855
@@ -193,38 +215,39 @@ def get_captions_text_with_embedding_dataset(batch_size, text_dataset_dir):
 
     # Take one caption text.
     indices_chosen_caption = iter(indices_chosen_caption)
+
     def take_single_text(text_captions):
         return text_captions[next(indices_chosen_caption)]
-    text_captions_dataset = text_captions_dataset.map(take_single_text,
-                                                      num_parallel_calls=24)
-    text_captions_dataset = text_captions_dataset.cache()
-    text_captions_dataset = text_captions_dataset.repeat()
+
+    txt_captions_ds = txt_captions_ds.map(take_single_text,
+                                          num_parallel_calls=12)
+    txt_captions_ds = txt_captions_ds.cache()
+    txt_captions_ds = txt_captions_ds.repeat()
     # Batch.
-    text_captions_dataset = text_captions_dataset.apply(
+    txt_captions_ds = txt_captions_ds.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
 
-    # Take one caption embedding.
+    # Take one caption embedding
     indices_chosen_caption = iter(indices_chosen_caption)
-    def take_single_emb(embedded_captions):
+
+    def take_single_emb(captions):
         # Select single caption.
-        selected_caption_embedding = embedded_captions[next(
-            indices_chosen_caption), :]
+        selected_caption_embedding = captions[next(indices_chosen_caption), :]
         selected_caption_embedding.set_shape((1024,))
         return selected_caption_embedding
-    embedded_captions_dataset = embedded_captions_dataset.map(take_single_emb,
-                                                      num_parallel_calls=24)
-    # Batch.
-    embedded_captions_dataset = embedded_captions_dataset.apply(
-        tf.contrib.data.batch_and_drop_remainder(batch_size))
 
-    return text_captions_dataset, embedded_captions_dataset
+    emb_captions_ds = emb_captions_ds.map(take_single_emb,
+                                          num_parallel_calls=12)
+
+    return txt_captions_ds, emb_captions_ds
 
 
-def provide_data(batch_size,
-                 image_dataset_dir='tf_birds_dataset/cub/with_600_val_split/',
-                 text_dataset_dir='birds/train/',
-                 split_name='train',
-                 stack_depth=1):
+def provide_datasets(batch_size,
+                     noise_dim,
+                     image_dataset_dir='tf_birds_dataset/cub/with_600_val_split/',
+                     text_dataset_dir='birds/train/',
+                     split_name='train',
+                     stack_depth=1):
     """Provides batches of CIFAR data.
 
     Args:
@@ -249,45 +272,69 @@ def provide_data(batch_size,
     Raises:
       ValueError: if the split_name is not either 'train' or 'test'.
     """
-
-    # TODO(joppe): move as much operations as possible from individual datasets to the shared dataset
-    images_dataset = get_images_dataset(split_name,
-                                        image_dataset_dir,
-                                        batch_size,
-                                        stack_depth)
-
-    captions_text_dataset, captions_embedding_dataset = get_captions_text_with_embedding_dataset(
+    # Generator inputs.
+    captions_text_dataset, emb_captions_ds = get_captions_txt_and_emb(
         batch_size,
         text_dataset_dir)
 
-    image_caption_dataset = tf.data.Dataset.zip(
-        (images_dataset, captions_embedding_dataset))  # type: tf.data.Dataset
-    image_caption_dataset = image_caption_dataset.cache()
-    image_caption_dataset = image_caption_dataset.repeat()
-    image_caption_dataset = image_caption_dataset.apply(
-        tf.contrib.data.prefetch_to_device("/gpu:0"))
+    # Batch
+    generator_inputs = emb_captions_ds.apply(
+        tf.contrib.data.batch_and_drop_remainder(batch_size))
 
-    image_embedding_iterator = image_caption_dataset.make_one_shot_iterator()
-    images, captions_embedding = image_embedding_iterator.get_next()
+    print(generator_inputs.output_types)  # (tf.float32, tf.float32)
+    print(generator_inputs.output_shapes)
+    # (TensorShape([Dimension(24), Dimension(100)]),
+    #  TensorShape([Dimension(24), Dimension(1024)]))
 
+    image_dataset = get_image_dataset(split_name,
+                                      image_dataset_dir,
+                                      batch_size,
+                                      stack_depth)
+
+    # Discriminator inputs.
+    discriminator_inputs = image_dataset
+
+    print(discriminator_inputs.output_types)  # < dtype: 'float32' >
+    print(discriminator_inputs.output_shapes)
+    # (24, 64, 64, 3)
+
+    input_dataset = tf.data.Dataset.zip(
+        (generator_inputs, discriminator_inputs))
+
+    # Cache
+    input_dataset = input_dataset.cache()
+    # Repeat
+    input_dataset = input_dataset.repeat()
+    # Prefetch
+    input_dataset = input_dataset.prefetch(1) 
+
+    print(input_dataset.output_types)  # ((tf.float32, tf.float32), tf.float32)
+    print(input_dataset.output_shapes)
+    # ((TensorShape([Dimension(24), Dimension(100)]),
+    #   TensorShape([Dimension(24), Dimension(1024)])),
+    #  TensorShape([Dimension(24), Dimension(64), Dimension(64), Dimension(3)]))
+
+    # Text captions for logging.
     text_iterator = captions_text_dataset.make_one_shot_iterator()
     captions_text = text_iterator.get_next()
 
-    return images, captions_text, captions_embedding
+    return input_dataset, captions_text
 
 
-def get_training_data_iterator(batch_size,
-                               image_dataset_dir,
-                               text_dataset_dir,
-                               stack_depth=1):
+def get_training_datasets(batch_size,
+                          noise_dim,
+                          image_dataset_dir,
+                          text_dataset_dir,
+                          stack_depth=1):
     # Define our input pipeline. Pin it to the CPU so that the GPU can be reserved
-    # for forward and backwards propogation.
+    # for forward and backwards propagation.
     with tf.name_scope('inputs'):
         with tf.device('/cpu:0'):
-            images, captions_text, captions_embedding = provide_data(
+            input_dataset, captions_text = provide_datasets(
                 batch_size,
+                noise_dim,
                 image_dataset_dir,
                 text_dataset_dir,
                 stack_depth=stack_depth)
 
-    return images, captions_text, captions_embedding
+    return input_dataset, captions_text
