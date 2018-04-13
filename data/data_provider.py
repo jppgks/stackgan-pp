@@ -28,7 +28,7 @@ def get_image_dataset(split_name,
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
     files = tf.data.Dataset.list_files(file_pattern)
-    images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=24)
+    images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=12)
 
     keys_to_features = {
         'image/height': tf.FixedLenFeature([], tf.int64),
@@ -117,7 +117,7 @@ def get_image_dataset(split_name,
         return all_stage_real_imgs
 
     # Parse.
-    images_dataset = images_dataset.map(parser, num_parallel_calls=24)
+    images_dataset = images_dataset.map(parser, num_parallel_calls=12)
 
     shapes = []
     for stage in range(stack_depth):
@@ -138,7 +138,7 @@ def get_image_dataset(split_name,
     # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
     images_dataset = images_dataset.map(
         lambda image_batch: (image_batch - 128.0) / 128.0,
-        num_parallel_calls=48)
+        num_parallel_calls=12)
 
     return images_dataset
 
@@ -220,7 +220,7 @@ def get_captions_txt_and_emb(batch_size,
         return text_captions[next(indices_chosen_caption)]
 
     txt_captions_ds = txt_captions_ds.map(take_single_text,
-                                          num_parallel_calls=24)
+                                          num_parallel_calls=12)
     txt_captions_ds = txt_captions_ds.cache()
     txt_captions_ds = txt_captions_ds.repeat()
     # Batch.
@@ -237,7 +237,7 @@ def get_captions_txt_and_emb(batch_size,
         return selected_caption_embedding
 
     emb_captions_ds = emb_captions_ds.map(take_single_emb,
-                                          num_parallel_calls=48)
+                                          num_parallel_calls=12)
 
     return txt_captions_ds, emb_captions_ds
 
@@ -281,7 +281,6 @@ def provide_datasets(batch_size,
     generator_inputs = emb_captions_ds.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
 
-
     print(generator_inputs.output_types)  # (tf.float32, tf.float32)
     print(generator_inputs.output_shapes)
     # (TensorShape([Dimension(24), Dimension(100)]),
@@ -306,6 +305,9 @@ def provide_datasets(batch_size,
     input_dataset = input_dataset.cache()
     # Repeat
     input_dataset = input_dataset.repeat()
+    # Prefetch
+    input_dataset = input_dataset.apply(
+        tf.contrib.data.prefetch_to_device("/gpu:0"))
 
     print(input_dataset.output_types)  # ((tf.float32, tf.float32), tf.float32)
     print(input_dataset.output_shapes)
