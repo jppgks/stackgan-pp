@@ -97,8 +97,8 @@ def main(_):
     run_config = tf.estimator.RunConfig(
         train_distribute=distribution,
         session_config=sess_config,
-        save_summary_steps=1,
-        log_step_count_steps=1)
+        save_summary_steps=200,
+        log_step_count_steps=50)
 
     # ???
     # Initialize GANEstimator with options and hyperparameters.
