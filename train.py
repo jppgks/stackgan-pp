@@ -86,16 +86,16 @@ def main(_):
 
     # 3) Do some configuration,
     # - Session config
-    sess_config = tf.ConfigProto(log_device_placement=True)
+    sess_config = tf.ConfigProto(allow_soft_placement=True)
     sess_config.gpu_options.allow_growth = True
     # - Distribution config
-    distribution = tf.contrib.distribute.MirroredStrategy(
-        devices=["/device:CPU:0", "/device:GPU:0"]
+    distribution = tf.contrib.distribute.OneDeviceStrategy(
+        device='/device:GPU:0'
     )
 
     # - Estimator config
     run_config = tf.estimator.RunConfig(
-        distribute=distribution,
+        train_distribute=distribution,
         session_config=sess_config,
         save_summary_steps=1,
         log_step_count_steps=1)
