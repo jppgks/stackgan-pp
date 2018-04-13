@@ -27,7 +27,7 @@ def get_image_dataset(split_name,
         file_pattern = _FILE_PATTERN
     file_pattern = os.path.join(dataset_dir, file_pattern % split_name)
 
-    files = tf.data.Dataset.list_files(file_pattern)
+    files = tf.data.Dataset.list_files(file_pattern, shuffle=False)
     images_dataset = tf.data.TFRecordDataset(files, num_parallel_reads=12)
 
     keys_to_features = {
@@ -306,8 +306,7 @@ def provide_datasets(batch_size,
     # Repeat
     input_dataset = input_dataset.repeat()
     # Prefetch
-    input_dataset = input_dataset.apply(
-        tf.contrib.data.prefetch_to_device("/gpu:0"))
+    input_dataset = input_dataset.prefetch(1) 
 
     print(input_dataset.output_types)  # ((tf.float32, tf.float32), tf.float32)
     print(input_dataset.output_shapes)
