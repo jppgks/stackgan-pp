@@ -43,16 +43,10 @@ The color loss for the generator is defined in [`tfstackgan/python/losses/python
 The [`./train.py`](train.py) and [`./networks.py`](networks.py) scripts are modeled after the TFGAN [CIFAR example](https://github.com/tensorflow/models/tree/master/research/gan/cifar).
 
 ## Comparison with paper
-**Conditioning.**
-Currently, only the unconditional setting is implemented.
 
 **Upsampling.**
 This implementation does not make use of GLUs and/or residual blocks at the moment.
 Upsampling in all generator stages happens through [fractionally strided convolutions](https://www.tensorflow.org/api_docs/python/tf/layers/conv2d_transpose).
-
-**Loss.**
-This implementation uses the Wasserstein loss, with optional gradient penalty, 
-whereas the paper uses the non-saturating minimax loss.
 
 ## References
 - [TFGAN](https://github.com/tensorflow/tensorflow/tree/master/tensorflow/contrib/gan)
