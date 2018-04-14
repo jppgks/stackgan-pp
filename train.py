@@ -97,8 +97,8 @@ def main(_):
     run_config = tf.estimator.RunConfig(
         train_distribute=distribution,
         session_config=sess_config,
-        save_summary_steps=200,
-        log_step_count_steps=50)
+        save_summary_steps=100,
+        log_step_count_steps=100)
 
     # ???
     # Initialize GANEstimator with options and hyperparameters.
@@ -129,10 +129,14 @@ def main(_):
     # Actual GAN training. Run the alternating training loop.
     train_input_fn = _get_train_input_fn()
 
-    # TODO: possibly add train SessionRunHook hooks here
+    hooks = [tf.train.ProfilerHook(save_steps=100,
+                                   show_dataflow=True,
+                                   show_memory=False,
+                                   output_dir=FLAGS.train_log_dir), ]
 
     stackgan_estimator.train(train_input_fn,
-                             max_steps=FLAGS.max_number_of_steps)
+                             max_steps=FLAGS.max_number_of_steps,
+                             hooks=hooks)
 
 
 def _get_train_input_fn():
