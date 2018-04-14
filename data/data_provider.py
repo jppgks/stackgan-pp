@@ -306,7 +306,7 @@ def provide_datasets(batch_size,
     # Repeat
     input_dataset = input_dataset.repeat()
     # Prefetch
-    input_dataset = input_dataset.prefetch(1) 
+    input_dataset = input_dataset.prefetch(buffer_size=None)
 
     print(input_dataset.output_types)  # ((tf.float32, tf.float32), tf.float32)
     print(input_dataset.output_shapes)
