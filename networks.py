@@ -61,41 +61,125 @@ def dcgan_generator(inputs,
     end_points = {}
     with tf.variable_scope(scope, values=[inputs], reuse=reuse) as scope:
         with slim.arg_scope([normalizer_fn], **normalizer_fn_args):
-            with slim.arg_scope([slim.conv2d_transpose],
+            with slim.arg_scope([slim.conv2d_transpose,
+                                 slim.conv2d],
                                 normalizer_fn=normalizer_fn,
                                 stride=2,
                                 kernel_size=4):
                 if len(inputs.get_shape()) == 2:
                     # Init stage.
-                    num_layers = int(log(final_size)) - 1
+                    num_layers = int(log(final_size))  # - 1
                     net = tf.expand_dims(tf.expand_dims(inputs, 1), 1)
                 else:
                     # Next stage.
                     num_layers = int(log(final_size)) - (
-                        int(log(inputs.shape[1])) - 1) - 1
+                        int(log(inputs.shape[1])) - 1)  # - 1
                     net = inputs
 
-                if num_layers > 1:
+                # print(net.get_shape().as_list())
+                _, prev_height, prev_width, channels = net.get_shape().as_list()
+
+                # Reflection pad by 1 in spatial dimensions (axes 1, 2 = h, w) to make a 3x3
+                # 'valid' convolution produce an output with the same dimension as the
+                # input.
+                spatial_pad_1 = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
+                stride = [2, 2]
+
+                # net = tf.contrib.layers.fully_connected(
+                #     net, depth, activation_fn=None)
+                # # - GLU
+                # split = net.get_shape().as_list()[2]
+                # split = int(split / 2)
+                # net = net[:, :split] * tf.sigmoid(net[:, split:])
+
+                print(net.get_shape().as_list())
+
+                for i in range(0, min(2, num_layers)):
                     # First upscaling is different because it takes the input vector.
-                    current_depth = depth * 2 ** (num_layers - 1)
-                    scope = 'deconv1'
-                    # ! Default activation for slim.conv2d_transpose is relu.
-                    net = slim.conv2d_transpose(
-                        net, current_depth, stride=1, padding='VALID',
-                        scope=scope)
+                    # current_depth = depth * 2 ** (num_layers - 1)
+                    scope = 'deconv%i' % (i)
+
+                    net = tf.image.resize_nearest_neighbor(
+                        net, [stride[0] * prev_height, stride[1] * prev_width])
+
+                    print(net.get_shape().as_list())
+
+                    net = tf.pad(net, spatial_pad_1, 'REFLECT')
+
+                    print(net.get_shape().as_list())
+
+                    net = tf.contrib.layers.conv2d(net, round(channels / 2),
+                                                   kernel_size=[3, 3],
+                                                   stride=1,
+                                                   padding='valid',
+                                                   scope=scope)
+
+                    # # - GLU
+                    # split = net.get_shape().as_list()[2]
+                    # split = int(split / 2)
+                    # net = net[:, :split] * tf.sigmoid(net[:, split:])
+
+                    print(net.get_shape().as_list())
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
+                    # print([prev_height * 2, prev_width * 2])
+
+                    # # ! Default activation for slim.conv2d_transpose is relu.
+                    # net = slim.conv2d_transpose(
+                    #     net, current_depth, stride=1, padding='VALID',
+                    #     scope=scope)
                     end_points[scope] = net
 
-                for i in range(2, num_layers):
+                spatial_pad_2 = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
+
+                for i in range(3, num_layers):
                     scope = 'deconv%i' % (i)
-                    current_depth = depth * 2 ** (num_layers - i)
-                    net = slim.conv2d_transpose(net, current_depth, scope=scope)
+                    # current_depth = depth * 2 ** (num_layers - i)
+                    # print(net.get_shape().as_list())
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
+                    # print([prev_height * 2, prev_width * 2])
+
+                    net = tf.image.resize_nearest_neighbor(
+                        net, [stride[0] * prev_height, stride[1] * prev_width])
+
+                    print(net.get_shape().as_list())
+
+                    net = tf.pad(net, spatial_pad_2, 'REFLECT')
+
+                    print(net.get_shape().as_list())
+
+                    net = tf.contrib.layers.conv2d(net, round(channels / 2),
+                                                   kernel_size=[3, 3],
+                                                   stride=1,
+                                                   padding='valid',
+                                                   scope=scope)
+
+                    print(net.get_shape().as_list())
+
+                    # # - GLU
+                    # split = net.get_shape().as_list()[2]
+                    # split = int(split / 2)
+                    # net = net[:, :split] * tf.sigmoid(net[:, split:])
+                    # net = slim.conv2d_transpose(net, current_depth, scope=scope)
                     end_points[scope] = net
 
                 # Last layer has different normalizer and activation.
                 scope = 'deconv%i' % (num_layers)
-                net = slim.conv2d_transpose(
-                    net, depth, normalizer_fn=None, activation_fn=None,
-                    scope=scope)
+                # print(net.get_shape().as_list())
+                _, prev_height, prev_width, channels = net.get_shape().as_list()
+                print([prev_height * 2, prev_width * 2])
+
+                net = tf.image.resize_nearest_neighbor(
+                    net, [stride[0] * prev_height, stride[1] * prev_width])
+                net = tf.pad(net, spatial_pad_2, 'REFLECT')
+                net = tf.contrib.layers.conv2d(net, round(channels / 2),
+                                               activation_fn=None,
+                                               kernel_size=[3, 3],
+                                               stride=1,
+                                               padding='valid',
+                                               scope=scope)
+
+                print(net.get_shape().as_list())
+
                 end_points[scope] = net
 
                 # Convert to proper channels.
@@ -130,6 +214,7 @@ def augment(conditioning, new_dim=128):
     """
     # Encode
     net = slim.fully_connected(conditioning, new_dim * 4, activation_fn=None)
+    # - GLU
     split = net.get_shape().as_list()[1]
     split = int(split / 2)
     glu = net[:, :split] * tf.sigmoid(net[:, split:])
