@@ -61,23 +61,44 @@ def dcgan_generator(inputs,
     end_points = {}
     with tf.variable_scope(scope, values=[inputs], reuse=reuse) as scope:
         with slim.arg_scope([normalizer_fn], **normalizer_fn_args):
-            with slim.arg_scope([slim.conv2d_transpose,
-                                 slim.conv2d],
+            with slim.arg_scope([tf.contrib.layers.conv2d],
                                 normalizer_fn=normalizer_fn,
-                                stride=2,
-                                kernel_size=4):
-                if len(inputs.get_shape()) == 2:
-                    # Init stage.
-                    num_layers = int(log(final_size))  # - 1
-                    net = tf.expand_dims(tf.expand_dims(inputs, 1), 1)
-                else:
-                    # Next stage.
-                    num_layers = int(log(final_size)) - (
-                        int(log(inputs.shape[1])) - 1)  # - 1
-                    net = inputs
+                                kernel_size=[3, 3],
+                                stride=1,
+                                activation_fn=tf.nn.relu,
+                                padding='valid', ):
+                # if len(inputs.get_shape()) == 2:
+                #     # Init stage.
+                #     num_layers = int(log(final_size))  # - 1
+                #     net = tf.expand_dims(tf.expand_dims(inputs, 1), 1)
+                # else:
+                #     # Next stage.
+                #     num_layers = int(log(final_size)) - (
+                #         int(log(inputs.shape[1])) - 1)  # - 1
+                #     net = inputs
 
-                # print(net.get_shape().as_list())
-                _, prev_height, prev_width, channels = net.get_shape().as_list()
+                net = inputs
+
+                net = tf.contrib.layers.fully_connected(
+                    net,
+                    depth * 4 * 4,
+                    biases_initializer=None,
+                    activation_fn=None)
+                net = tf.contrib.layers.batch_norm(net, is_training=is_training)
+                net = tf.nn.relu(net)
+                net = tf.reshape(net,
+                                 [-1, 4, 4, depth])  # (-1, self.gf_dim, 4, 4)
+
+                print(net.get_shape().as_list())
+
+                num_layers = int(log(final_size)) - int(log(4))
+
+                print('num layers: {}'.format(num_layers))
+
+                # # - GLU
+                # split = net.get_shape().as_list()[2]
+                # split = int(split / 2)
+                # net = net[:, :split] * tf.sigmoid(net[:, split:])
 
                 # Reflection pad by 1 in spatial dimensions (axes 1, 2 = h, w) to make a 3x3
                 # 'valid' convolution produce an output with the same dimension as the
@@ -85,72 +106,37 @@ def dcgan_generator(inputs,
                 spatial_pad_1 = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
                 stride = [2, 2]
 
-                # net = tf.contrib.layers.fully_connected(
-                #     net, depth, activation_fn=None)
-                # # - GLU
-                # split = net.get_shape().as_list()[2]
-                # split = int(split / 2)
-                # net = net[:, :split] * tf.sigmoid(net[:, split:])
-
-                print(net.get_shape().as_list())
-
                 for i in range(0, min(2, num_layers)):
                     # First upscaling is different because it takes the input vector.
                     # current_depth = depth * 2 ** (num_layers - 1)
                     scope = 'deconv%i' % (i)
 
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
                     net = tf.image.resize_nearest_neighbor(
                         net, [stride[0] * prev_height, stride[1] * prev_width])
-
-                    print(net.get_shape().as_list())
-
                     net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                    net = tf.contrib.layers.conv2d(net,
+                                                   round(channels / 2),
+                                                   scope=scope)
 
                     print(net.get_shape().as_list())
-
-                    net = tf.contrib.layers.conv2d(net, round(channels / 2),
-                                                   kernel_size=[3, 3],
-                                                   stride=1,
-                                                   padding='valid',
-                                                   scope=scope)
 
                     # # - GLU
                     # split = net.get_shape().as_list()[2]
                     # split = int(split / 2)
                     # net = net[:, :split] * tf.sigmoid(net[:, split:])
 
-                    print(net.get_shape().as_list())
-                    _, prev_height, prev_width, channels = net.get_shape().as_list()
-                    # print([prev_height * 2, prev_width * 2])
-
-                    # # ! Default activation for slim.conv2d_transpose is relu.
-                    # net = slim.conv2d_transpose(
-                    #     net, current_depth, stride=1, padding='VALID',
-                    #     scope=scope)
                     end_points[scope] = net
-
-                spatial_pad_2 = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
 
                 for i in range(3, num_layers):
                     scope = 'deconv%i' % (i)
-                    # current_depth = depth * 2 ** (num_layers - i)
-                    # print(net.get_shape().as_list())
-                    _, prev_height, prev_width, channels = net.get_shape().as_list()
-                    # print([prev_height * 2, prev_width * 2])
 
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
                     net = tf.image.resize_nearest_neighbor(
                         net, [stride[0] * prev_height, stride[1] * prev_width])
-
-                    print(net.get_shape().as_list())
-
-                    net = tf.pad(net, spatial_pad_2, 'REFLECT')
-
-                    print(net.get_shape().as_list())
-
-                    net = tf.contrib.layers.conv2d(net, round(channels / 2),
-                                                   kernel_size=[3, 3],
-                                                   stride=1,
-                                                   padding='valid',
+                    net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                    net = tf.contrib.layers.conv2d(net,
+                                                   round(channels / 2),
                                                    scope=scope)
 
                     print(net.get_shape().as_list())
@@ -170,12 +156,10 @@ def dcgan_generator(inputs,
 
                 net = tf.image.resize_nearest_neighbor(
                     net, [stride[0] * prev_height, stride[1] * prev_width])
-                net = tf.pad(net, spatial_pad_2, 'REFLECT')
-                net = tf.contrib.layers.conv2d(net, round(channels / 2),
+                net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                net = tf.contrib.layers.conv2d(net,
+                                               round(channels / 2),
                                                activation_fn=None,
-                                               kernel_size=[3, 3],
-                                               stride=1,
-                                               padding='valid',
                                                scope=scope)
 
                 print(net.get_shape().as_list())
@@ -242,9 +226,10 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
     """
     is_init_stage, noise, conditioning = inputs
 
+    num_layers = int(log(final_size)) - int(log(4))
+
     if is_init_stage:
         noise = tf.concat([conditioning, noise], 1)  # noise, conditioning -1
-        num_layers = int(log(final_size)) - 1
     else:
         h_code_final_size = noise.get_shape()[2]
         conditioning = tf.reshape(conditioning,
@@ -258,7 +243,6 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
                                    -1])
 
         noise = tf.concat([conditioning, noise], -1)
-        num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
 
     images, end_points = dcgan_generator(
         noise, final_size=final_size,

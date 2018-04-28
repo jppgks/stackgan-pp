@@ -132,9 +132,6 @@ def get_image_dataset(split_name,
     # if stack_depth == 1:
     #     shapes = shapes[0]  # flatten shapes, bc dataset input is no sequence
 
-    print(images_dataset)
-    print(tuple(shapes))
-
     # TODO: try `shapes = tuple(shapes)` for multi stage support
 
     images_dataset = images_dataset.apply(
@@ -282,11 +279,6 @@ def provide_datasets(batch_size,
     generator_inputs = emb_captions_ds.apply(
         tf.contrib.data.batch_and_drop_remainder(batch_size))
 
-    print(generator_inputs.output_types)  # (tf.float32, tf.float32)
-    print(generator_inputs.output_shapes)
-    # (TensorShape([Dimension(24), Dimension(100)]),
-    #  TensorShape([Dimension(24), Dimension(1024)]))
-
     image_dataset = get_image_dataset(split_name,
                                       image_dataset_dir,
                                       batch_size,
@@ -294,10 +286,6 @@ def provide_datasets(batch_size,
 
     # Discriminator inputs.
     discriminator_inputs = image_dataset
-
-    print(discriminator_inputs.output_types)  # < dtype: 'float32' >
-    print(discriminator_inputs.output_shapes)
-    # (24, 64, 64, 3)
 
     input_dataset = tf.data.Dataset.zip(
         (generator_inputs, discriminator_inputs))
@@ -308,12 +296,6 @@ def provide_datasets(batch_size,
     input_dataset = input_dataset.repeat()
     # Prefetch
     input_dataset = input_dataset.prefetch(buffer_size=None)
-
-    print(input_dataset.output_types)  # ((tf.float32, tf.float32), tf.float32)
-    print(input_dataset.output_shapes)
-    # ((TensorShape([Dimension(24), Dimension(100)]),
-    #   TensorShape([Dimension(24), Dimension(1024)])),
-    #  TensorShape([Dimension(24), Dimension(64), Dimension(64), Dimension(3)]))
 
     # Text captions for logging.
     text_iterator = captions_text_dataset.make_one_shot_iterator()
@@ -331,6 +313,7 @@ def get_training_datasets(batch_size,
     # for forward and backwards propagation.
     with tf.name_scope('inputs'):
         with tf.device('/cpu:0'):
+            print('Creating datasets.')
             input_dataset, captions_text = provide_datasets(
                 batch_size,
                 noise_dim,
