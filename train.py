@@ -148,7 +148,7 @@ def _get_train_input_fn():
             FLAGS.text_dataset_dir,
             FLAGS.stack_depth)
         # Log captions to TensorBoard
-        summary_img_grid_size = 2
+        summary_img_grid_size = 4
         tf.summary.text('Captions',
                         captions_text[:summary_img_grid_size ** 2])
 

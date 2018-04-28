@@ -82,6 +82,15 @@ def gan_model(  # Lambdas defining models.
         real_data = tf.convert_to_tensor(real_data)
         discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
             real_data, disc_conditioning, apply_batch_norm=apply_batch_norm)
+    # Discriminate wrong image-label combination
+    with tf.variable_scope(dis_scope), \
+         tf.name_scope(dis_scope.original_name_scope):
+        # Shuffle real data so images don't match labels (disc_conditioning)
+        # anymore.
+        with tf.device('/cpu:0'):
+            wrong_images = tf.random_shuffle(real_data)
+        disc_wrong_img_label_outputs, disc_wrong_img_label_outputs_uncond = discriminator_fn(
+            wrong_images, disc_conditioning, apply_batch_norm=apply_batch_norm)
 
     if check_shapes:
         if not generated_data.shape.is_compatible_with(real_data.shape):
@@ -109,6 +118,8 @@ def gan_model(  # Lambdas defining models.
         stage,
         disc_real_outputs_uncond,
         disc_gen_outputs_uncond,
+        disc_wrong_img_label_outputs,
+        disc_wrong_img_label_outputs_uncond,
         mu,
         logvar)
 
@@ -242,6 +253,8 @@ def dis_loss(
     dis_loss = discriminator_loss_fn(
         pooled_model.discriminator_real_outputs,
         pooled_model.disc_real_outputs_uncond,
+        pooled_model.disc_wrong_img_label_outputs,
+        pooled_model.disc_wrong_img_label_outputs_uncond,
         pooled_model.discriminator_gen_outputs,
         pooled_model.disc_gen_outputs_uncond,
         uncond_loss_coeff,
@@ -531,7 +544,8 @@ def gan_train_ops(gan_models, gan_loss, gen_opt, dis_opt):
         gan_models[-1],
         gan_loss.generator_loss,
         gen_opt,
-        summarize_gradients=False,  # op was put on GPU, where string type not supported --> no summaries
+        summarize_gradients=False,
+        # op was put on GPU, where string type not supported --> no summaries
         colocate_gradients_with_ops=True,
         aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
     disc_train_ops = tfstackgan.discriminator_train_ops(

@@ -203,7 +203,8 @@ def wasserstein_discriminator_loss(
             with tf.device('/cpu:0'):
                 tf.summary.scalar('discriminator_gen_wass_loss',
                                   loss_on_generated_cond)
-                tf.summary.scalar('discriminator_real_wass_loss', loss_on_real_cond)
+                tf.summary.scalar('discriminator_real_wass_loss',
+                                  loss_on_real_cond)
                 tf.summary.scalar('discriminator_wass_loss', loss)
 
     return loss
@@ -220,8 +221,8 @@ def minimax_generator_loss(
         reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS,
         add_summaries=False):
     with tf.name_scope(scope, 'generator_modified_loss',
-                        [discriminator_gen_outputs_cond,
-                         discriminator_gen_outputs_uncond]) as scope:
+                       [discriminator_gen_outputs_cond,
+                        discriminator_gen_outputs_uncond]) as scope:
         loss_cond = tf.losses.sigmoid_cross_entropy(
             tf.ones_like(discriminator_gen_outputs_cond),
             discriminator_gen_outputs_cond, weights, label_smoothing, scope,
@@ -245,6 +246,8 @@ def minimax_generator_loss(
 def minimax_discriminator_loss(
         discriminator_real_outputs_cond,
         discriminator_real_outputs_uncond,
+        disc_wrong_img_label_outputs,
+        disc_wrong_img_label_outputs_uncond,
         discriminator_gen_outputs_cond,
         discriminator_gen_outputs_uncond,
         uncond_loss_coeff,
@@ -273,8 +276,14 @@ def minimax_discriminator_loss(
             tf.zeros_like(discriminator_gen_outputs_cond),
             discriminator_gen_outputs_cond, generated_weights, scope=scope,
             loss_collection=None, reduction=reduction)
+        # Signal here should be 'wrong', as image and label don't match, so use
+        # `zeros_like`.
+        loss_on_wrong_cond = tf.losses.sigmoid_cross_entropy(
+            tf.zeros_like(disc_wrong_img_label_outputs),
+            disc_wrong_img_label_outputs, real_weights, label_smoothing,
+            scope, loss_collection=None, reduction=reduction)
 
-        cond_loss = loss_on_real_cond + loss_on_generated_cond
+        cond_loss = loss_on_real_cond + loss_on_generated_cond + loss_on_wrong_cond
 
         # Unconditional loss
 
@@ -284,13 +293,20 @@ def minimax_discriminator_loss(
             discriminator_real_outputs_uncond, real_weights, label_smoothing,
             scope,
             loss_collection=None, reduction=reduction)
+        # Signal in the unconditional case should be 'right',
+        # as the discriminated image was real.
+        loss_on_wrong_uncond = tf.losses.sigmoid_cross_entropy(
+            tf.ones_like(disc_wrong_img_label_outputs_uncond),
+            disc_wrong_img_label_outputs_uncond, real_weights, label_smoothing,
+            scope,
+            loss_collection=None, reduction=reduction)
         # -log(- sigmoid(D(G(x))))
         loss_on_generated_uncond = tf.losses.sigmoid_cross_entropy(
             tf.zeros_like(discriminator_gen_outputs_uncond),
             discriminator_gen_outputs_uncond, generated_weights, scope=scope,
             loss_collection=None, reduction=reduction)
 
-        uncond_loss = loss_on_generated_uncond + loss_on_real_uncond
+        uncond_loss = loss_on_generated_uncond + loss_on_real_uncond + loss_on_wrong_uncond
 
         # Total loss
         loss = cond_loss + (uncond_loss_coeff * uncond_loss)
