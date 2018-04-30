@@ -84,7 +84,7 @@ def dcgan_generator(inputs,
                     depth * 4 * 4,
                     biases_initializer=None,
                     activation_fn=None)
-                net = tf.contrib.layers.batch_norm(net, is_training=is_training)
+                net = normalizer_fn(net)
                 net = tf.nn.relu(net)
                 net = tf.reshape(net,
                                  [-1, 4, 4, depth])  # (-1, self.gf_dim, 4, 4)
