@@ -102,37 +102,39 @@ def main(_):
 
     # ???
     # Initialize GANEstimator with options and hyperparameters.
-    stackgan_estimator = tfstackgan.estimator.StackGANEstimator(
-        model_dir=FLAGS.train_log_dir,
-        # Model params
-        stack_depth=FLAGS.stack_depth,
-        batch_size=FLAGS.batch_size,
-        noise_dim=FLAGS.noise_dim,
-        # Networks
-        generator_fn=networks.generator,
-        discriminator_fn=networks.discriminator,
-        apply_batch_norm=FLAGS.apply_batch_norm,
-        # Losses
-        generator_loss_fn=generator_loss_fn,
-        discriminator_loss_fn=discriminator_loss_fn,
-        uncond_loss_coeff=FLAGS.uncond_loss_coeff,
-        color_loss_weight=FLAGS.color_loss,
-        gradient_penalty_weight=FLAGS.gradient_penalty,
-        # Optimizers
-        generator_optimizer=gen_opt_fn,
-        discriminator_optimizer=dis_opt_fn,
-        # Config
-        add_summaries=tfstackgan.estimator.SummaryType.IMAGES,
-        config=run_config)
+    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+        stackgan_estimator = tfstackgan.estimator.StackGANEstimator(
+            model_dir=FLAGS.train_log_dir,
+            # Model params
+            stack_depth=FLAGS.stack_depth,
+            batch_size=FLAGS.batch_size,
+            noise_dim=FLAGS.noise_dim,
+            # Networks
+            generator_fn=networks.generator,
+            discriminator_fn=networks.discriminator,
+            apply_batch_norm=FLAGS.apply_batch_norm,
+            # Losses
+            generator_loss_fn=generator_loss_fn,
+            discriminator_loss_fn=discriminator_loss_fn,
+            uncond_loss_coeff=FLAGS.uncond_loss_coeff,
+            color_loss_weight=FLAGS.color_loss,
+            gradient_penalty_weight=FLAGS.gradient_penalty,
+            # Optimizers
+            generator_optimizer=gen_opt_fn,
+            discriminator_optimizer=dis_opt_fn,
+            # Config
+            add_summaries=tfstackgan.estimator.SummaryType.IMAGES,
+            config=run_config)
 
     # PROFIT!
     # Actual GAN training. Run the alternating training loop.
     train_input_fn = _get_train_input_fn()
 
-    hooks = [tf.train.ProfilerHook(save_steps=100,
-                                   show_dataflow=True,
-                                   show_memory=False,
-                                   output_dir=FLAGS.train_log_dir), ]
+    hooks = []
+    # hooks = [tf.train.ProfilerHook(save_steps=100,
+    #                                show_dataflow=True,
+    #                                show_memory=False,
+    #                                output_dir=FLAGS.train_log_dir), ]
 
     stackgan_estimator.train(train_input_fn,
                              max_steps=FLAGS.max_number_of_steps,
