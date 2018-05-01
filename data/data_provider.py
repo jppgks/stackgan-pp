@@ -101,6 +101,9 @@ def get_image_dataset(split_name,
         # Random horizontal flip.
         image = tf.image.random_flip_left_right(image)
 
+        # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
+        image = (image - 128.0) / 128.0
+
         # Resize to all image resolutions needed in training.
         def _get_real_data_for_stage(image, i):
             resolution = 2 ** (6 + i)
@@ -137,11 +140,6 @@ def get_image_dataset(split_name,
     images_dataset = images_dataset.apply(
         tf.contrib.data.padded_batch_and_drop_remainder(batch_size,
                                                         tuple(shapes)))
-
-    # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
-    images_dataset = images_dataset.map(
-        lambda image_batch: (image_batch - 128.0) / 128.0,
-        num_parallel_calls=12)
 
     return images_dataset
 
