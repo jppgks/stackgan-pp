@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.contrib.framework.python.ops import add_arg_scope
 
 slim = tf.contrib.slim
 
@@ -11,6 +12,77 @@ def log(x):
         result = numerator / denominator
         result = result.eval()
     return result
+
+
+# https://github.com/nnUyi/SNGAN/blob/master/ops.py
+# spectral_norm
+def l2_norm(input_x, epsilon=1e-12):
+    input_x_norm = input_x / (tf.reduce_sum(input_x ** 2) ** 0.5 + epsilon)
+    return input_x_norm
+
+
+def weights_spectral_norm(weights, u=None, iteration=1, update_collection=None,
+                          reuse=False, name='weights_SN'):
+    with tf.variable_scope(name) as scope:
+        if reuse:
+            scope.reuse_variables()
+
+        w_shape = weights.get_shape().as_list()
+        w_mat = tf.reshape(weights, [-1, w_shape[-1]])
+        if u is None:
+            u = tf.get_variable('u', shape=[1, w_shape[-1]],
+                                initializer=tf.truncated_normal_initializer(),
+                                trainable=False)
+
+        def power_iteration(u, ite):
+            v_ = tf.matmul(u, tf.transpose(w_mat))
+            v_hat = l2_norm(v_)
+            u_ = tf.matmul(v_hat, w_mat)
+            u_hat = l2_norm(u_)
+            return u_hat, v_hat, ite + 1
+
+        u_hat, v_hat, _ = power_iteration(u, iteration)
+
+        sigma = tf.matmul(tf.matmul(v_hat, w_mat), tf.transpose(u_hat))
+
+        w_mat = w_mat / sigma
+
+        if update_collection is None:
+            with tf.control_dependencies([u.assign(u_hat)]):
+                w_norm = tf.reshape(w_mat, w_shape)
+        else:
+            if not (update_collection == 'NO_OPS'):
+                print(update_collection)
+                tf.add_to_collection(update_collection, u.assign(u_hat))
+
+            w_norm = tf.reshape(w_mat, w_shape)
+        return w_norm
+
+
+@add_arg_scope
+def conv2d(input_x, kernel_size, stride, scope_name='conv2d',
+           padding='SAME', spectral_norm=True, update_collection=None,
+           normalizer_fn=None,
+           activation_fn=tf.nn.relu):
+    output_len = kernel_size[3]
+    with tf.variable_scope(scope_name):
+        weights = tf.get_variable('weights', kernel_size, tf.float32,
+                                  initializer=tf.random_normal_initializer(
+                                      stddev=0.02))
+        bias = tf.get_variable('bias', output_len, tf.float32,
+                               initializer=tf.constant_initializer(0))
+        if spectral_norm:
+            weights = weights_spectral_norm(weights,
+                                            update_collection=update_collection)
+
+        conv = tf.nn.bias_add(
+            tf.nn.conv2d(input_x, weights, strides=stride, padding=padding),
+            bias)
+        if normalizer_fn:
+            conv = normalizer_fn(conv)
+        if activation_fn is not None:
+            conv = activation_fn(conv)
+        return conv
 
 
 # TODO(joelshor): Use fused batch norm by default. Investigate why some GAN
@@ -45,7 +117,7 @@ def dcgan_generator(inputs,
       ValueError: If `inputs` is not 2-dimensional.
       ValueError: If `final_size` isn't a power of 2 or is less than 8.
     """
-    normalizer_fn = slim.batch_norm
+    normalizer_fn = tf.contrib.layers.batch_norm
     normalizer_fn_args = {
         'is_training': is_training,
         'zero_debias_moving_mean': True,
@@ -225,9 +297,12 @@ def dcgan_discriminator(inputs,
         dimensions aren't square, or if the spatial dimensions aren't a power of
         two.
     """
-    normalizer_fn = slim.batch_norm
+    normalizer_fn = tf.contrib.layers.batch_norm
     normalizer_fn_args = {
         'is_training': is_training,
+        'decay': 0.9,
+        'epsilon': 1e-5,
+        'scale': True,
         'zero_debias_moving_mean': True,
         'fused': fused_batch_norm,
     }
@@ -238,29 +313,34 @@ def dcgan_discriminator(inputs,
     end_points = {}
     with tf.variable_scope(scope, values=[inputs], reuse=reuse) as scope:
         with slim.arg_scope([normalizer_fn], **normalizer_fn_args):
-            with slim.arg_scope([slim.conv2d],
-                                stride=2,
-                                kernel_size=4,
+            with slim.arg_scope([conv2d],
+                                padding='VALID',
                                 activation_fn=tf.nn.leaky_relu):
                 net = inputs
-                for i in range(int(log(inp_shape))):
+                num_layers = int(log(inp_shape)) - int(log(4))
+                for i in range(num_layers):
                     scope = 'conv%i' % (i + 1)
                     current_depth = depth * 2 ** i
-                    current_depth = current_depth if current_depth <= 2048 else 2048
+                    current_depth = current_depth if current_depth <= 512 else 512
+                    kernel_size = [4, 4,
+                                   net.get_shape().as_list()[3],
+                                   current_depth]
                     # No normalizing input layer
                     normalizer_fn_ = None if i == 0 else normalizer_fn
-                    net = slim.conv2d(
-                        net, current_depth, normalizer_fn=normalizer_fn_,
-                        scope=scope)
+                    net = conv2d(net, kernel_size,
+                                 stride=[1, 2, 2, 1],
+                                 spectral_norm=True,
+                                 normalizer_fn=normalizer_fn_,
+                                 scope_name=scope)
                     end_points[scope] = net
 
-                logits = slim.conv2d(net, 1, kernel_size=1, stride=1,
-                                     padding='VALID',
-                                     normalizer_fn=None, activation_fn=None)
-                logits = tf.reshape(logits, [-1, 1])
-                end_points['logits'] = logits
+                # logits = slim.conv2d(net, 1, kernel_size=1, stride=1,
+                #                      padding='VALID',
+                #                      normalizer_fn=None, activation_fn=None)
+                # logits = tf.reshape(logits, [-1, 1])
+                # end_points['logits'] = logits
 
-                return logits, end_points
+                return None, end_points
 
 
 def _last_conv_layer(end_points):
