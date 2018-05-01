@@ -80,6 +80,7 @@ def gan_model(  # Lambdas defining models.
     with tf.variable_scope(dis_scope), \
          tf.name_scope(dis_scope.original_name_scope):
         real_data = tf.convert_to_tensor(real_data)
+        real_data = tf.squeeze(real_data)
         discriminator_real_outputs, disc_real_outputs_uncond = discriminator_fn(
             real_data, disc_conditioning, apply_batch_norm=apply_batch_norm)
     # Discriminate wrong image-label combination
