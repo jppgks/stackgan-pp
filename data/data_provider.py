@@ -176,7 +176,7 @@ def get_text_captions_dataset(text_data_dir):
         #     return captions
 
         filenames = load_filenames(text_data_dir)
-        caption_data_dir = os.path.join(text_data_dir, os.pardir, 'text_c10')
+        caption_data_dir = os.path.join(text_data_dir, 'text_c10')
         paths_to_txt_files = []
         for key in filenames:
             caption_path = os.path.join(caption_data_dir, key + '.txt')
