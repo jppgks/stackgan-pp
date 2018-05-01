@@ -98,6 +98,9 @@ def get_image_dataset(split_name,
         image = tf.to_float(image)
         image.set_shape((largest_res, largest_res, 3,))
 
+        # Random horizontal flip.
+        image = tf.image.random_flip_left_right(image)
+
         # Resize to all image resolutions needed in training.
         def _get_real_data_for_stage(image, i):
             resolution = 2 ** (6 + i)
