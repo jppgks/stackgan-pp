@@ -98,6 +98,12 @@ def get_image_dataset(split_name,
         image = tf.to_float(image)
         image.set_shape((largest_res, largest_res, 3,))
 
+        # Random horizontal flip.
+        image = tf.image.random_flip_left_right(image)
+
+        # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
+        image = (image - 128.0) / 128.0
+
         # Resize to all image resolutions needed in training.
         def _get_real_data_for_stage(image, i):
             resolution = 2 ** (6 + i)
@@ -135,11 +141,6 @@ def get_image_dataset(split_name,
         tf.contrib.data.padded_batch_and_drop_remainder(batch_size,
                                                         tuple(shapes)))
 
-    # Normalize. TODO(joppe): if needed, normalize like StackGAN pytorch source
-    images_dataset = images_dataset.map(
-        lambda image_batch: (image_batch - 128.0) / 128.0,
-        num_parallel_calls=12)
-
     return images_dataset
 
 
@@ -176,7 +177,7 @@ def get_text_captions_dataset(text_data_dir):
         #     return captions
 
         filenames = load_filenames(text_data_dir)
-        caption_data_dir = os.path.join(text_data_dir, os.pardir, 'text_c10')
+        caption_data_dir = os.path.join(text_data_dir, 'text_c10')
         paths_to_txt_files = []
         for key in filenames:
             caption_path = os.path.join(caption_data_dir, key + '.txt')

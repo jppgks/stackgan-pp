@@ -247,6 +247,7 @@ def dcgan_discriminator(inputs,
                     scope = 'conv%i' % (i + 1)
                     current_depth = depth * 2 ** i
                     current_depth = current_depth if current_depth <= 2048 else 2048
+                    # No normalizing input layer
                     normalizer_fn_ = None if i == 0 else normalizer_fn
                     net = slim.conv2d(
                         net, current_depth, normalizer_fn=normalizer_fn_,

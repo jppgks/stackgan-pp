@@ -25,6 +25,8 @@ class StackGANModel(
             'stage',
             'disc_real_outputs_uncond',
             'disc_gen_outputs_uncond',
+            'disc_wrong_img_label_outputs',
+            'disc_wrong_img_label_outputs_uncond',
             # Loss specific
             'mu',
             'logvar',))):
@@ -54,7 +56,8 @@ class DiscriminatorLoss(
 class GeneratorLoss(
     namedtuple('GeneratorLoss', tuple(field
                                       for field
-                                      in tfgan.GANLoss._fields  # (generator_loss, discriminator_loss)
+                                      in tfgan.GANLoss._fields
+                                      # (generator_loss, discriminator_loss)
                                       if field != 'discriminator_loss'))):
     pass
 
