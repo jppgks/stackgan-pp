@@ -137,6 +137,8 @@ class StackGANEstimator(estimator.Estimator):
                  uncond_loss_coeff=0.0,
                  color_loss_weight=0.0,
                  gradient_penalty_weight=0.0,
+                 # Eval,
+                 num_inception_images=0,
                  add_summaries=None,
                  use_loss_summaries=True,
                  config=None):
@@ -194,7 +196,8 @@ class StackGANEstimator(estimator.Estimator):
             gan_head = head_lib.stackgan_head(
                 generator_loss_fn, discriminator_loss_fn, gopt, dopt,
                 uncond_loss_coeff, color_loss_weight, gradient_penalty_weight,
-                use_loss_summaries, get_hooks_fn=get_hooks_fn)
+                use_loss_summaries, batch_size, num_inception_images,
+                get_hooks_fn=get_hooks_fn)
 
             return _gan_model_fn(
                 stack_depth, batch_size, noise_dim, features, labels, mode,

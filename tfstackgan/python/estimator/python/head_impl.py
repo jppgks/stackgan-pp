@@ -24,12 +24,13 @@ from tensorflow.contrib.gan.python import namedtuples as tfgan_tuples
 from tensorflow.contrib.gan.python import train as tfgan_train
 from tensorflow.python.estimator import model_fn as model_fn_lib
 from tensorflow.python.estimator.canned import head
-from tensorflow.python.framework import ops
+from tensorflow.python.framework import ops, constant_op
 from tensorflow.python.training import training_util
 from tensorflow.python.ops import variable_scope, control_flow_ops
 
 from tfstackgan import train as tfstackgan_train
 from tfstackgan import namedtuples as tfstackgan_tuples
+from tfstackgan.python.metrics.python import util_impl as metrics_lib
 
 __all__ = [
     'StackGANHead',
@@ -37,10 +38,14 @@ __all__ = [
 ]
 
 
+def _summary_key(head_name, val):
+    return '%s/%s' % (val, head_name) if head_name else val
+
+
 def stackgan_head(generator_loss_fn, discriminator_loss_fn, generator_optimizer,
                   discriminator_optimizer, uncond_loss_coeff,
                   color_loss_weight, gradient_penalty_weight,
-                  use_loss_summaries=True,
+                  use_loss_summaries=True, batch_size=0, num_inception_images=0,
                   get_hooks_fn=tfstackgan_train.get_sequential_train_hooks(),
                   name=None):
     """Creates a `GANHead`.
@@ -71,6 +76,8 @@ def stackgan_head(generator_loss_fn, discriminator_loss_fn, generator_optimizer,
                         color_loss_weight=color_loss_weight,
                         gradient_penalty_weight=gradient_penalty_weight,
                         use_loss_summaries=use_loss_summaries,
+                        batch_size=batch_size,
+                        num_inception_images=num_inception_images,
                         get_hooks_fn=get_hooks_fn,
                         name=name)
 
@@ -82,6 +89,8 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
                  generator_optimizer, discriminator_optimizer,
                  uncond_loss_coeff, color_loss_weight, gradient_penalty_weight,
                  use_loss_summaries=True,
+                 batch_size=0,
+                 num_inception_images=0,
                  get_hooks_fn=None,
                  name=None):
         """`Head` for GAN training.
@@ -117,6 +126,9 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
         self._generator_optimizer = generator_optimizer
         self._discriminator_optimizer = discriminator_optimizer
         self._get_hooks_fn = get_hooks_fn
+        self._batch_size = batch_size
+        self._num_inception_images = num_inception_images
+        self._name = name
 
     @property
     def name(self):
@@ -215,24 +227,26 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
             raise ValueError('`features` should be `None`. Instead, found: %s' %
                              features)
         gan_models = logits  # rename variable for clarity
-        with ops.name_scope('GANHead'):
+        with ops.name_scope('StackGANHead'):
             if mode == model_fn_lib.ModeKeys.PREDICT:
                 gan_model = gan_models  # rename variable for clarity
                 return model_fn_lib.EstimatorSpec(
                     mode=model_fn_lib.ModeKeys.PREDICT,
                     predictions=gan_model.generated_data)
             elif mode == model_fn_lib.ModeKeys.EVAL:
+                real_data = gan_models[-1].real_data
+                generated_data = gan_models[-1].generated_data
                 gan_loss = self.create_loss(
                     features=None, mode=mode, logits=gan_models, labels=None)
                 scalar_loss = gan_loss.generator_loss + sum(
                     gan_loss.discriminator_loss)
                 return model_fn_lib.EstimatorSpec(
                     mode=model_fn_lib.ModeKeys.EVAL,
-                    predictions=gan_models.generated_data,
+                    predictions=generated_data,
                     loss=scalar_loss,
-                    # TODO(joelshor): Add metrics. If head name provided, append it to
-                    # metric keys.
-                    eval_metric_ops={})
+                    eval_metric_ops=self._eval_metric_ops(
+                        real_data, generated_data, self._batch_size,
+                        num_inception_images=self._num_inception_images))
             elif mode == model_fn_lib.ModeKeys.TRAIN:
                 if train_op_fn is None:
                     raise ValueError('train_op_fn can not be None.')
@@ -252,6 +266,28 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
                     training_hooks=None)  # training_hooks
             else:
                 raise ValueError('Mode not recognized: %s' % mode)
+
+    def _eval_metric_ops(self, real_data, generated_data,
+                         batch_size, num_inception_images):
+        with ops.name_scope(None, 'metrics'):
+            metric_ops = {
+                # Estimator already adds a metric for loss.
+                _summary_key(self._name, 'inception_score'):
+                    metrics_lib.get_inception_scores(
+                        generated_data,
+                        batch_size,
+                        num_inception_images),
+                _summary_key(self._name, 'frechet_inception_distance'):
+                    metrics_lib.get_frechet_inception_distance(
+                        real_data,
+                        generated_data,
+                        batch_size,
+                        num_inception_images),
+                # TODO: sliced wasserstein distance
+                _summary_key(self._name, 'sliced_wasserstein_distance'):
+                    (constant_op.constant(0), control_flow_ops.no_op()),
+            }
+            return metric_ops
 
 
 def _validate_logits_and_labels(logits, labels):
