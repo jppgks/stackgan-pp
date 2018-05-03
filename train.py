@@ -17,10 +17,10 @@ flags.DEFINE_integer('stack_depth', 3,
                      'Defines the size of the GAN stack: ' +
                      'the number of (discriminator, generator) stages.')
 
-flags.DEFINE_integer('batch_size', 8,
+flags.DEFINE_integer('batch_size', 24,
                      'The number of images in each batch.')  # 24
 
-flags.DEFINE_integer('noise_dim', 64,  # 100
+flags.DEFINE_integer('noise_dim', 100,
                      'Dimension of the noise that\'s input for each generator.')
 
 flags.DEFINE_string('loss_fn', 'minimax',
@@ -46,8 +46,19 @@ flags.DEFINE_float('discriminator_lr', 0.0001,
 
 flags.DEFINE_float('gradient_penalty', None, 'Gradient penalty weight.')
 
+
+# TODO: fix batch norm usage
 flags.DEFINE_boolean('apply_batch_norm', False,
-                     'Apply batch normalization.')
+                     'The is_training setting for batch_norm layers.')
+
+flags.DEFINE_boolean('eval', False,
+                     'Evaluate instead of train.')
+
+flags.DEFINE_integer('num_eval_steps', 1,
+                     'Number of evaluation steps to run.')
+
+flags.DEFINE_integer('num_inception_images', 10,
+                     'Number of inception images to use for eval.')
 
 flags.DEFINE_string('train_log_dir', '/tmp/cifar-stackgan-3stage',
                     'Directory to write event logs and checkpoints to. Will '
@@ -122,13 +133,13 @@ def main(_):
             # Optimizers
             generator_optimizer=gen_opt_fn,
             discriminator_optimizer=dis_opt_fn,
+            # Eval,
+            num_inception_images=FLAGS.num_inception_images,
             # Config
             add_summaries=tfstackgan.estimator.SummaryType.IMAGES,
             config=run_config)
 
     # PROFIT!
-    # Actual GAN training. Run the alternating training loop.
-    train_input_fn = _get_train_input_fn()
 
     hooks = []
     # hooks = [tf.train.ProfilerHook(save_steps=100,
@@ -136,9 +147,18 @@ def main(_):
     #                                show_memory=False,
     #                                output_dir=FLAGS.train_log_dir), ]
 
-    stackgan_estimator.train(train_input_fn,
-                             max_steps=FLAGS.max_number_of_steps,
-                             hooks=hooks)
+    is_training = not FLAGS.eval
+    if is_training:
+        # Actual GAN training. Run the alternating training loop.
+        train_input_fn = _get_train_input_fn()
+        stackgan_estimator.train(train_input_fn,
+                                 max_steps=FLAGS.max_number_of_steps,
+                                 hooks=hooks)
+    else:
+        # Run evaluation metrics.
+        eval_input_fn = _get_eval_input_fn()
+        stackgan_estimator.evaluate(eval_input_fn,
+                                    steps=FLAGS.num_eval_steps)
 
 
 def _get_train_input_fn():
@@ -157,6 +177,20 @@ def _get_train_input_fn():
         return input_dataset
 
     return train_input_fn
+
+
+def _get_eval_input_fn():
+    def eval_input_fn():
+        input_dataset, _ = data_provider.get_training_datasets(
+            FLAGS.batch_size,
+            FLAGS.noise_dim,
+            FLAGS.image_dataset_dir,
+            FLAGS.text_dataset_dir,
+            FLAGS.stack_depth)
+
+        return input_dataset
+
+    return eval_input_fn
 
 
 def _get_predict_input_fn(batch_size, noise_dims):
