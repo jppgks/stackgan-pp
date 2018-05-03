@@ -46,13 +46,15 @@ flags.DEFINE_float('discriminator_lr', 0.0001,
 
 flags.DEFINE_float('gradient_penalty', None, 'Gradient penalty weight.')
 
+
+# TODO: fix batch norm usage
 flags.DEFINE_boolean('apply_batch_norm', False,
-                     'Apply batch normalization.')
+                     'The is_training setting for batch_norm layers.')
 
 flags.DEFINE_boolean('eval', False,
                      'Evaluate instead of train.')
 
-flags.DEFINE_integer('num_inception_images', 6,
+flags.DEFINE_integer('num_inception_images', 10,
                      'Number of inception images to use for eval.')
 
 flags.DEFINE_string('train_log_dir', '/tmp/cifar-stackgan-3stage',
@@ -135,8 +137,6 @@ def main(_):
             config=run_config)
 
     # PROFIT!
-    # Actual GAN training. Run the alternating training loop.
-    train_input_fn = _get_train_input_fn()
 
     hooks = []
     # hooks = [tf.train.ProfilerHook(save_steps=100,
@@ -153,8 +153,8 @@ def main(_):
                                  hooks=hooks)
     else:
         # Run evaluation metrics.
-        # TODO: use evaluate_input_fn
-        stackgan_estimator.evaluate(train_input_fn,
+        eval_input_fn = _get_eval_input_fn()
+        stackgan_estimator.evaluate(eval_input_fn,
                                     steps=100)
 
 
@@ -174,6 +174,20 @@ def _get_train_input_fn():
         return input_dataset
 
     return train_input_fn
+
+
+def _get_eval_input_fn():
+    def eval_input_fn():
+        input_dataset, _ = data_provider.get_training_datasets(
+            FLAGS.batch_size,
+            FLAGS.noise_dim,
+            FLAGS.image_dataset_dir,
+            FLAGS.text_dataset_dir,
+            FLAGS.stack_depth)
+
+        return input_dataset
+
+    return eval_input_fn
 
 
 def _get_predict_input_fn(batch_size, noise_dims):
