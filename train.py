@@ -54,6 +54,9 @@ flags.DEFINE_boolean('apply_batch_norm', False,
 flags.DEFINE_boolean('eval', False,
                      'Evaluate instead of train.')
 
+flags.DEFINE_integer('num_eval_steps', 1,
+                     'Number of evaluation steps to run.')
+
 flags.DEFINE_integer('num_inception_images', 10,
                      'Number of inception images to use for eval.')
 
@@ -155,7 +158,7 @@ def main(_):
         # Run evaluation metrics.
         eval_input_fn = _get_eval_input_fn()
         stackgan_estimator.evaluate(eval_input_fn,
-                                    steps=100)
+                                    steps=FLAGS.num_eval_steps)
 
 
 def _get_train_input_fn():
