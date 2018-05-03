@@ -283,9 +283,9 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
                         generated_data,
                         batch_size,
                         num_inception_images),
-                # TODO: sliced wasserstein distance
                 _summary_key(self._name, 'sliced_wasserstein_distance'):
-                    (constant_op.constant(0), control_flow_ops.no_op()),
+                    metrics_lib.get_sliced_wasserstein_distance(
+                        real_data, generated_data),
             }
             return metric_ops
 

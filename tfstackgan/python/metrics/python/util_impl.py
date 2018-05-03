@@ -10,6 +10,7 @@ from tensorflow.python.ops import control_flow_ops
 __all__ = [
     'get_inception_scores',
     'get_frechet_inception_distance',
+    'get_sliced_wasserstein_distance',
 ]
 
 
@@ -77,3 +78,9 @@ def get_frechet_inception_distance(real_images, generated_images, batch_size,
         resized_real_images, resized_generated_images, num_batches=num_batches)
 
     return fid, control_flow_ops.no_op()
+
+
+def get_sliced_wasserstein_distance(real_data, generated_data):
+    swd = tfgan_eval.sliced_wasserstein_distance(real_data, generated_data)
+
+    return swd, control_flow_ops.no_op()
