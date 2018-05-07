@@ -62,8 +62,8 @@ def weights_spectral_norm(weights, u=None, iteration=1, update_collection=None,
 @add_arg_scope
 def conv2d(input_x, kernel_size, stride, scope_name='conv2d',
            padding='SAME', spectral_norm=True, update_collection=None,
-           normalizer_fn=None,
-           activation_fn=tf.nn.relu):
+           normalizer_fn=None, normalizer_params=None,
+           activation_fn=tf.nn.leaky_relu):
     output_len = kernel_size[3]
     with tf.variable_scope(scope_name):
         weights = tf.get_variable('weights', kernel_size, tf.float32,
@@ -330,7 +330,7 @@ def dcgan_discriminator(inputs,
                     net = conv2d(net, kernel_size,
                                  stride=[1, 2, 2, 1],
                                  spectral_norm=True,
-                                 normalizer_fn=normalizer_fn_,
+                                 normalizer_fn=None,
                                  scope_name=scope)
                     end_points[scope] = net
 
@@ -378,11 +378,13 @@ def discriminator(img, conditioning, apply_batch_norm=False):
         1)  # -1
 
     # Block3x3_leakRelu(ndf * 8 + efg, ndf * 8)
-    normalizer_fn_ = slim.batch_norm if apply_batch_norm else None
     activation_fn_ = tf.nn.leaky_relu
-    conditioned = slim.conv2d(conditioned, depth, kernel_size=3, stride=1,
-                              padding='VALID', normalizer_fn=normalizer_fn_,
-                              activation_fn=activation_fn_)
+    kernel_size = [3, 3,
+                   conditioned.get_shape().as_list()[3],
+                   depth]
+    conditioned = conv2d(conditioned, kernel_size, [1, 2, 2, 1],
+                         padding='VALID',
+                         activation_fn=activation_fn_)
 
     # last layer dcgan_discriminator
     conditioned_logits = slim.conv2d(conditioned, 1, kernel_size=1, stride=1,
