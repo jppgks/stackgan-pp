@@ -48,7 +48,7 @@ flags.DEFINE_float('gradient_penalty', None, 'Gradient penalty weight.')
 
 
 # TODO: fix batch norm usage
-flags.DEFINE_boolean('apply_batch_norm', False,
+flags.DEFINE_boolean('apply_batch_norm', True,
                      'The is_training setting for batch_norm layers.')
 
 flags.DEFINE_boolean('eval', False,
@@ -113,31 +113,30 @@ def main(_):
 
     # ???
     # Initialize GANEstimator with options and hyperparameters.
-    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-        stackgan_estimator = tfstackgan.estimator.StackGANEstimator(
-            model_dir=FLAGS.train_log_dir,
-            # Model params
-            stack_depth=FLAGS.stack_depth,
-            batch_size=FLAGS.batch_size,
-            noise_dim=FLAGS.noise_dim,
-            # Networks
-            generator_fn=networks.generator,
-            discriminator_fn=networks.discriminator,
-            apply_batch_norm=FLAGS.apply_batch_norm,
-            # Losses
-            generator_loss_fn=generator_loss_fn,
-            discriminator_loss_fn=discriminator_loss_fn,
-            uncond_loss_coeff=FLAGS.uncond_loss_coeff,
-            color_loss_weight=FLAGS.color_loss,
-            gradient_penalty_weight=FLAGS.gradient_penalty,
-            # Optimizers
-            generator_optimizer=gen_opt_fn,
-            discriminator_optimizer=dis_opt_fn,
-            # Eval,
-            num_inception_images=FLAGS.num_inception_images,
-            # Config
-            add_summaries=tfstackgan.estimator.SummaryType.IMAGES,
-            config=run_config)
+    stackgan_estimator = tfstackgan.estimator.StackGANEstimator(
+        model_dir=FLAGS.train_log_dir,
+        # Model params
+        stack_depth=FLAGS.stack_depth,
+        batch_size=FLAGS.batch_size,
+        noise_dim=FLAGS.noise_dim,
+        # Networks
+        generator_fn=networks.generator,
+        discriminator_fn=networks.discriminator,
+        apply_batch_norm=FLAGS.apply_batch_norm,
+        # Losses
+        generator_loss_fn=generator_loss_fn,
+        discriminator_loss_fn=discriminator_loss_fn,
+        uncond_loss_coeff=FLAGS.uncond_loss_coeff,
+        color_loss_weight=FLAGS.color_loss,
+        gradient_penalty_weight=FLAGS.gradient_penalty,
+        # Optimizers
+        generator_optimizer=gen_opt_fn,
+        discriminator_optimizer=dis_opt_fn,
+        # Eval,
+        num_inception_images=FLAGS.num_inception_images,
+        # Config
+        add_summaries=tfstackgan.estimator.SummaryType.IMAGES,
+        config=run_config)
 
     # PROFIT!
 

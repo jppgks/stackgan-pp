@@ -253,11 +253,13 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
                 gan_loss = self.create_loss(None, mode, gan_models, None)
                 scalar_loss = gan_loss.generator_loss + sum(
                     gan_loss.discriminator_loss)
+
                 train_ops = train_op_fn(gan_models, gan_loss,
                                         self._generator_optimizer,
                                         self._discriminator_optimizer)
-                train_ops = control_flow_ops.group(train_ops.generator_train_op,
-                                                   train_ops.discriminator_train_op)
+                train_ops = control_flow_ops.group(
+                    train_ops.generator_train_op,
+                    train_ops.discriminator_train_op)
 
                 return model_fn_lib.EstimatorSpec(
                     loss=scalar_loss,
