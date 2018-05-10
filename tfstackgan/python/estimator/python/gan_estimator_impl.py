@@ -45,7 +45,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
 from tensorflow.python.training import distribute as distribute_lib
 from tensorflow.python.training import monitored_session
-from tensorflow.python.training import training_util
+from tensorflow.python.training import training_util, checkpoint_utils
 
 import tensorflow.contrib.gan as tfgan
 
@@ -202,7 +202,7 @@ class StackGANEstimator(estimator.Estimator):
             return _gan_model_fn(
                 stack_depth, batch_size, noise_dim, features, labels, mode,
                 generator_fn, discriminator_fn, gan_head,
-                add_summaries,
+                add_summaries, model_dir=model_dir,
                 apply_batch_norm=apply_batch_norm)
 
         super(StackGANEstimator, self).__init__(
@@ -220,6 +220,7 @@ def _gan_model_fn(
         discriminator_fn,
         head,
         add_summaries=None,
+        model_dir=None,
         generator_scope_name='',
         apply_batch_norm=False):
     """The `model_fn` for the GAN estimator.
@@ -287,6 +288,12 @@ def _gan_model_fn(
             generator_scope_name,
             apply_batch_norm)
         gan_models = gan_model  # only single model returned, but `logits` is assigned `gan_models`
+
+    assignment_map = {
+        'Discriminator_stage_0/': 'Discriminator_stage_0/',
+        'Generator/Generator_stage_0/': 'Generator/Generator_stage_0/',
+    }
+    checkpoint_utils.init_from_checkpoint(model_dir, assignment_map)
 
     return head.create_estimator_spec(features=None, mode=mode,
                                       logits=gan_models, labels=None)
