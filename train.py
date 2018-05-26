@@ -180,12 +180,16 @@ def _get_train_input_fn():
 
 def _get_eval_input_fn():
     def eval_input_fn():
-        input_dataset, _ = data_provider.get_training_datasets(
+        input_dataset, captions_text = data_provider.get_evaluation_datasets(
             FLAGS.batch_size,
             FLAGS.noise_dim,
             FLAGS.image_dataset_dir,
             FLAGS.text_dataset_dir,
             FLAGS.stack_depth)
+        # Log captions to TensorBoard
+        summary_img_grid_size = 4
+        tf.summary.text('Captions',
+                        captions_text[:summary_img_grid_size ** 2])
 
         return input_dataset
 
