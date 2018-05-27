@@ -147,7 +147,7 @@ def get_image_dataset(split_name,
 def load_text_embeddings(text_data_dir):
     # Get text embeddings.
     embedding_filename = 'char-CNN-RNN-embeddings.pickle'
-    with tf.gfile.Open(text_data_dir + embedding_filename, 'rb') as f:
+    with tf.gfile.Open(os.path.join(text_data_dir, embedding_filename), 'rb') as f:
         if sys.version_info < (3,):
             embeddings = cPickle.load(f)
         else:
@@ -158,7 +158,7 @@ def load_text_embeddings(text_data_dir):
     return numpy.array(embeddings)
 
 
-def get_text_captions_dataset(text_data_dir):
+def get_text_captions_dataset(text_data_dir, split_name):
     def load_filenames(data_dir):
         filepath = os.path.join(data_dir, 'filenames.pickle')
         with tf.gfile.Open(filepath, 'rb') as f:
@@ -176,8 +176,10 @@ def get_text_captions_dataset(text_data_dir):
         #                 for cap in captions if len(cap) > 0]
         #     return captions
 
-        filenames = load_filenames(text_data_dir)
-        caption_data_dir = os.path.join(text_data_dir, 'text_c10')
+        filenames = load_filenames(os.path.join(text_data_dir, split_name))
+        caption_data_dir = os.path.join(
+            text_data_dir,
+            'train/text_c10')  # all captions are stored in train dir
         paths_to_txt_files = []
         for key in filenames:
             caption_path = os.path.join(caption_data_dir, key + '.txt')
@@ -196,14 +198,15 @@ def get_text_captions_dataset(text_data_dir):
 
 
 def get_captions_txt_and_emb(batch_size,
-                             text_dataset_dir):
+                             text_dataset_dir,
+                             split_name='train'):
     # Load captions
     embedded_captions = load_text_embeddings(
-        text_dataset_dir)  # (8855, 10, 1024)
+        os.path.join(text_dataset_dir, split_name))  # (8855, 10, 1024)
     # Create dataset
     emb_captions_ds = tf.data.Dataset.from_tensor_slices(embedded_captions)
 
-    txt_captions_ds = get_text_captions_dataset(text_dataset_dir)
+    txt_captions_ds = get_text_captions_dataset(text_dataset_dir, split_name)
 
     # Get indices for selecting one caption from 10 given captions per img.
     num_imgs = 8855
@@ -276,7 +279,8 @@ def provide_datasets(batch_size,
     # Generator inputs.
     captions_text_dataset, emb_captions_ds = get_captions_txt_and_emb(
         batch_size,
-        text_dataset_dir)
+        text_dataset_dir,
+        split_name)
 
     # Batch
     generator_inputs = emb_captions_ds.apply(
@@ -336,6 +340,27 @@ def get_training_datasets(batch_size,
                 noise_dim,
                 image_dataset_dir,
                 text_dataset_dir,
+                split_name='train',
+                stack_depth=stack_depth)
+
+    return input_dataset, captions_text
+
+
+def get_evaluation_datasets(batch_size,
+                            noise_dim,
+                            image_dataset_dir,
+                            text_dataset_dir,
+                            stack_depth=1):
+    # Define our input pipeline. Pin it to the CPU so that the GPU can be reserved
+    # for forward and backwards propagation.
+    with tf.name_scope('inputs'):
+        with tf.device('/cpu:0'):
+            input_dataset, captions_text = provide_datasets(
+                batch_size,
+                noise_dim,
+                image_dataset_dir,
+                text_dataset_dir,
+                split_name='test',
                 stack_depth=stack_depth)
 
     return input_dataset, captions_text

@@ -19,14 +19,17 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
+import os
 
 from tensorflow.contrib.gan.python import namedtuples as tfgan_tuples
 from tensorflow.contrib.gan.python import train as tfgan_train
+from tensorflow.python.summary import summary
 from tensorflow.python.estimator import model_fn as model_fn_lib
 from tensorflow.python.estimator.canned import head
 from tensorflow.python.framework import ops, constant_op
 from tensorflow.python.training import training_util
 from tensorflow.python.ops import variable_scope, control_flow_ops
+from tensorflow.python.training.basic_session_run_hooks import SummarySaverHook
 
 from tfstackgan import train as tfstackgan_train
 from tfstackgan import namedtuples as tfstackgan_tuples
@@ -199,7 +202,7 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
 
     def create_estimator_spec(self, features, mode, logits, labels=None,
                               train_op_fn=tfstackgan_train.gan_train_ops,
-                              **kwargs):
+                              model_dir=None, **kwargs):
         """Returns `EstimatorSpec` that a model_fn can return.
     
         See `Head` for more details.
@@ -240,13 +243,24 @@ class StackGANHead(head._Head):  # pylint: disable=protected-access
                     features=None, mode=mode, logits=gan_models, labels=None)
                 scalar_loss = gan_loss.generator_loss + sum(
                     gan_loss.discriminator_loss)
+
+                evaluation_hooks = []
+                # Create a SummarySaverHook
+                eval_summary_hook = SummarySaverHook(
+                    save_steps=1,
+                    output_dir=os.path.join(model_dir, "eval"),
+                    summary_op=summary.merge_all())
+                # Add it to the evaluation_hook list
+                evaluation_hooks.append(eval_summary_hook)
+
                 return model_fn_lib.EstimatorSpec(
                     mode=model_fn_lib.ModeKeys.EVAL,
                     predictions=generated_data,
                     loss=scalar_loss,
                     eval_metric_ops=self._eval_metric_ops(
                         real_data, generated_data, self._batch_size,
-                        num_inception_images=self._num_inception_images))
+                        num_inception_images=self._num_inception_images),
+                    evaluation_hooks=evaluation_hooks)
             elif mode == model_fn_lib.ModeKeys.TRAIN:
                 if train_op_fn is None:
                     raise ValueError('train_op_fn can not be None.')

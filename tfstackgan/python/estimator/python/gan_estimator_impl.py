@@ -202,8 +202,8 @@ class StackGANEstimator(estimator.Estimator):
             return _gan_model_fn(
                 stack_depth, batch_size, noise_dim, features, labels, mode,
                 generator_fn, discriminator_fn, gan_head,
-                add_summaries,
-                apply_batch_norm=apply_batch_norm)
+                add_summaries, apply_batch_norm=apply_batch_norm,
+                model_dir=model_dir)
 
         super(StackGANEstimator, self).__init__(
             model_fn=_model_fn, model_dir=model_dir, config=config)
@@ -221,7 +221,8 @@ def _gan_model_fn(
         head,
         add_summaries=None,
         generator_scope_name='',
-        apply_batch_norm=False):
+        apply_batch_norm=False,
+        model_dir=None):
     """The `model_fn` for the GAN estimator.
   
     We make the following convention:
@@ -289,7 +290,8 @@ def _gan_model_fn(
         gan_models = gan_model  # only single model returned, but `logits` is assigned `gan_models`
 
     return head.create_estimator_spec(features=None, mode=mode,
-                                      logits=gan_models, labels=None)
+                                      logits=gan_models, labels=None,
+                                      model_dir=model_dir)
 
 
 def _make_gan_models(stack_depth, batch_size, noise_dim, generator_fn,
