@@ -8,7 +8,9 @@ described in the paper by Zhang, Xu et al.
 Python 3, TensorFlow 1.4 (, TensorBoard)
 
 **Data.**
-Currently uses CIFAR-10 images to train on, which is downloaded when running the `train.py` script.
+You can find used datasets on FloydHub:
+- [Text embeddings](https://www.floydhub.com/jppgks/datasets/stackgan-cub-text-embeddings)
+- [Bird images](https://www.floydhub.com/jppgks/datasets/cub)
 
 **Training.**
 1. Clone the repo, including the TensorFlow models submodule:
