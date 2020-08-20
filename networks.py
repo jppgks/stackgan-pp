@@ -133,41 +133,109 @@ def dcgan_generator(inputs,
     end_points = {}
     with tf.variable_scope(scope, values=[inputs], reuse=reuse) as scope:
         with slim.arg_scope([normalizer_fn], **normalizer_fn_args):
-            with slim.arg_scope([slim.conv2d_transpose],
+            with slim.arg_scope([tf.contrib.layers.conv2d],
                                 normalizer_fn=normalizer_fn,
-                                stride=2,
-                                kernel_size=4):
-                if len(inputs.get_shape()) == 2:
-                    # Init stage.
-                    num_layers = int(log(final_size)) - 1
-                    net = tf.expand_dims(tf.expand_dims(inputs, 1), 1)
-                else:
-                    # Next stage.
-                    num_layers = int(log(final_size)) - (
-                        int(log(inputs.shape[1])) - 1) - 1
-                    net = inputs
+                                kernel_size=[3, 3],
+                                stride=1,
+                                activation_fn=tf.nn.relu,
+                                padding='valid', ):
+                # if len(inputs.get_shape()) == 2:
+                #     # Init stage.
+                #     num_layers = int(log(final_size))  # - 1
+                #     net = tf.expand_dims(tf.expand_dims(inputs, 1), 1)
+                # else:
+                #     # Next stage.
+                #     num_layers = int(log(final_size)) - (
+                #         int(log(inputs.shape[1])) - 1)  # - 1
+                #     net = inputs
 
-                if num_layers > 1:
+                net = inputs
+
+                net = tf.contrib.layers.fully_connected(
+                    net,
+                    depth * 4 * 4,
+                    biases_initializer=None,
+                    activation_fn=None)
+                net = normalizer_fn(net)
+                net = tf.nn.relu(net)
+                net = tf.reshape(net,
+                                 [-1, 4, 4, depth])  # (-1, self.gf_dim, 4, 4)
+
+                print(net.get_shape().as_list())
+
+                num_layers = int(log(final_size)) - int(log(4))
+
+                print('num layers: {}'.format(num_layers))
+
+                # # - GLU
+                # split = net.get_shape().as_list()[2]
+                # split = int(split / 2)
+                # net = net[:, :split] * tf.sigmoid(net[:, split:])
+
+                # Reflection pad by 1 in spatial dimensions (axes 1, 2 = h, w) to make a 3x3
+                # 'valid' convolution produce an output with the same dimension as the
+                # input.
+                spatial_pad_1 = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
+                stride = [2, 2]
+
+                for i in range(0, min(2, num_layers)):
                     # First upscaling is different because it takes the input vector.
-                    current_depth = depth * 2 ** (num_layers - 1)
-                    scope = 'deconv1'
-                    # ! Default activation for slim.conv2d_transpose is relu.
-                    net = slim.conv2d_transpose(
-                        net, current_depth, stride=1, padding='VALID',
-                        scope=scope)
+                    # current_depth = depth * 2 ** (num_layers - 1)
+                    scope = 'deconv%i' % (i)
+
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
+                    net = tf.image.resize_nearest_neighbor(
+                        net, [stride[0] * prev_height, stride[1] * prev_width])
+                    net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                    net = tf.contrib.layers.conv2d(net,
+                                                   round(channels / 2),
+                                                   scope=scope)
+
+                    print(net.get_shape().as_list())
+
+                    # # - GLU
+                    # split = net.get_shape().as_list()[2]
+                    # split = int(split / 2)
+                    # net = net[:, :split] * tf.sigmoid(net[:, split:])
+
                     end_points[scope] = net
 
-                for i in range(2, num_layers):
+                for i in range(3, num_layers):
                     scope = 'deconv%i' % (i)
-                    current_depth = depth * 2 ** (num_layers - i)
-                    net = slim.conv2d_transpose(net, current_depth, scope=scope)
+
+                    _, prev_height, prev_width, channels = net.get_shape().as_list()
+                    net = tf.image.resize_nearest_neighbor(
+                        net, [stride[0] * prev_height, stride[1] * prev_width])
+                    net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                    net = tf.contrib.layers.conv2d(net,
+                                                   round(channels / 2),
+                                                   scope=scope)
+
+                    print(net.get_shape().as_list())
+
+                    # # - GLU
+                    # split = net.get_shape().as_list()[2]
+                    # split = int(split / 2)
+                    # net = net[:, :split] * tf.sigmoid(net[:, split:])
+                    # net = slim.conv2d_transpose(net, current_depth, scope=scope)
                     end_points[scope] = net
 
                 # Last layer has different normalizer and activation.
                 scope = 'deconv%i' % (num_layers)
-                net = slim.conv2d_transpose(
-                    net, depth, normalizer_fn=None, activation_fn=None,
-                    scope=scope)
+                # print(net.get_shape().as_list())
+                _, prev_height, prev_width, channels = net.get_shape().as_list()
+                print([prev_height * 2, prev_width * 2])
+
+                net = tf.image.resize_nearest_neighbor(
+                    net, [stride[0] * prev_height, stride[1] * prev_width])
+                net = tf.pad(net, spatial_pad_1, 'REFLECT')
+                net = tf.contrib.layers.conv2d(net,
+                                               round(channels / 2),
+                                               activation_fn=None,
+                                               scope=scope)
+
+                print(net.get_shape().as_list())
+
                 end_points[scope] = net
 
                 # Convert to proper channels.
@@ -202,6 +270,7 @@ def augment(conditioning, new_dim=128):
     """
     # Encode
     net = slim.fully_connected(conditioning, new_dim * 4, activation_fn=None)
+    # - GLU
     split = net.get_shape().as_list()[1]
     split = int(split / 2)
     glu = net[:, :split] * tf.sigmoid(net[:, split:])
@@ -229,9 +298,10 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
     """
     is_init_stage, noise, conditioning = inputs
 
+    num_layers = int(log(final_size)) - int(log(4))
+
     if is_init_stage:
         noise = tf.concat([conditioning, noise], 1)  # noise, conditioning -1
-        num_layers = int(log(final_size)) - 1
     else:
         h_code_final_size = noise.get_shape()[2]
         conditioning = tf.reshape(conditioning,
@@ -245,7 +315,6 @@ def generator(inputs, final_size=64, apply_batch_norm=False):
                                    -1])
 
         noise = tf.concat([conditioning, noise], -1)
-        num_layers = int(log(final_size)) - (int(log(noise.shape[1])) - 1) - 1
 
     images, end_points = dcgan_generator(
         noise, final_size=final_size,
